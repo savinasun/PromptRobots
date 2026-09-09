@@ -1,0 +1,36 @@
+# Spatial reasoning — 10 goals. One goal per line; lines starting with # are ignored.
+# Setup, pass criteria and what each task probes: tasks/spatial/README.md
+# Run:  scripts/run_astra_yam.sh run --config configs/skild_yam_8.yaml \
+#         --goals-file tasks/spatial/goals_spatial.txt --fast --release-tilt 0
+# Placement lanes (left-arm frame, y_right = y_left + 0.61) are in tasks/README.md.
+# --release-tilt 0 keeps the tool orientation pinned: these tasks are about where the gripper goes, not how it is turned.
+
+# SP01  Scene A: three plates in the mid row x=0.32 - blue at y=+0.20, white at y=-0.05, mint at y=-0.30
+Hover the left gripper about 5 cm above whichever plate is closest to the right arm's base, without touching anything, then call done.
+
+# SP02  Scene A, unchanged
+Of the three plates in the row, hover the left gripper about 5 cm above the middle one, without touching anything, then call done.
+
+# SP03  white mug at (0.32, -0.10), teal cup at (0.32, -0.50), both upright
+Move the right gripper to a point midway between the white mug and the teal cup, about 10 cm above the table, without touching either, then call done.
+
+# SP04  orange bowl alone at (0.32, -0.305)
+Move the left gripper to a point about 15 cm to the left of the orange bowl, at the height of the bowl's rim, without touching it, then call done.
+
+# SP05  teal cup alone in the right lane at (0.32, -0.86) - outside the left arm's reach and y bound entirely
+Hover a gripper about 5 cm above the teal cup, choosing whichever arm can reach it comfortably, then call done.
+
+# SP06  teal cup at (0.32, +0.10), white plate at (0.32, -0.20)
+Pick up the teal cup and set it down upright about 10 cm to the right of the white plate, without putting it on the plate.
+
+# SP07  white mug at (0.22, -0.10), white plate at (0.42, +0.20), mint plate at (0.42, -0.40)
+Two plates are on the table. Put the white mug on the plate that is farther from the left arm's base.
+
+# SP08  cutting board at (0.32, -0.305); teal cup behind it at (0.44, -0.305)
+The teal cup is behind the cutting board, farther from the arms. Pick it up and set it down upright in front of the cutting board, nearer to the arms.
+
+# SP09  Scene A, unchanged - all three are inside the left arm's reach
+Visit all three plates in turn, going left to right: hover the left gripper about 5 cm above each one, then call done.
+
+# SP10  blue plate in the left lane at (0.32, +0.20), mint plate in the right lane at (0.32, -0.81)
+Hover the left gripper above the leftmost plate and the right gripper above the rightmost plate at the same time, about 10 cm above each, then call done.

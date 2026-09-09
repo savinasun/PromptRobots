@@ -1,0 +1,78 @@
+# Station skild-yam-8 (bimanual YAM, hw v2.3), Astra closed-loop defaults.
+# Every key mirrors a field in astra_yam/config.py; omit anything you want at its default.
+embodiment_name: yam_arms
+
+bounds:
+  # NOT hand-tuned. Every range below is the robot's own limit, derived from skild_yam_v2.urdf and regenerated with
+  #   python -m astra_yam workspace
+  # Positions: axis-aligned envelope of the grasp point over the full URDF joint box (200064 FK samples, max reach
+  # 0.866 m), rounded outward to the millimetre. Rotations: the full range the reported extrinsic xyz Euler angles
+  # can represent (pitch is capped at +/-pi/2 by that convention itself, yaw and roll span +/-pi).
+  # This is a bounding box, not the reachable set: the gateway still rejects each unreachable target via IK, plus
+  # joint limits, configuration flips, arm-to-arm clearance and tracking error. Nothing artificial is imposed.
+  x: [-0.777, 0.777]
+  y: [-0.771, 0.772]
+  z: [-0.516, 0.864]  # the arm can reach 0.52 m BELOW its base plane; nothing stops a command into the table now.
+                      # Set motion.tool_floor_z_m (below) to keep the jaw tips above the table while tilting.
+  yaw: [-3.1416, 3.1416]
+  pitch: [-1.5708, 1.5708]
+  roll: [-3.1416, 3.1416]
+  gripper: [0.0, 1.0]
+
+motion:
+  cadence_hz: 10.0
+  control_hz: 30.0
+  linear_speed_mps: 0.01          # reference rig speed (~1 mm per waypoint)
+  yaw_speed_rps: 0.15
+  gripper_speed_per_s: 0.5
+  max_joint_step_rad: 0.05
+  tracking_abort_rad: 0.25
+  settle_seconds: 0.3
+  homing_seconds: 5.0
+  # tool_floor_z_m: 0.0           # uncomment to keep jaw tips/housing above the table while tilting; with the
+                                  # bounds above wide open, the tilt floor guard is otherwise inactive.
+
+robot:
+  backend: zmq                    # launch_yam_node.sh -> experiments/launch_nodes.py --robot=bimanual_yam
+  host: 127.0.0.1
+  port: 6001
+  gello_software_path: /home/skild/bimanual_manipulation/skild-gello/gello_software
+  home_at_start: true
+  home_joints_left:  [-0.02, 0.7967, 0.6167, -0.3756, -0.0204, -0.0078]
+  home_joints_right: [-0.02, 0.7967, 0.6167, -0.3756, -0.0204, -0.0078]
+  home_gripper: 1.0
+  # exact URDF limits (skild_yam_v2.urdf), not gello's rounded constants; both IK and the robot driver clamp here
+  joint_lower: [-2.61799, 0.0, 0.0, -1.5708, -1.5708, -2.0944]
+  joint_upper: [3.13, 3.65, 3.13, 1.5708, 1.5708, 2.0944]
+
+cameras:
+  backend: realsense
+  station_config_path: /home/skild/bimanual_manipulation/metadata/station_config.json
+  names:
+    top_camera: top_cam
+    left_wrist_camera: left_cam
+    right_wrist_camera: right_cam
+  jpeg_quality: 85
+  detail: high
+
+astra:
+  backend: openai
+  model: gpt-6-astra
+  reasoning_effort: null          # low | medium | high | xhigh | max  (null = API default)
+  reasoning_summary: auto         # auto | concise | detailed | null; readable reasoning trace in transcript.txt
+  tool_choice: required
+  parallel_tool_calls: false
+  image_history: 4                # images kept for the newest 4..8 observations (0 = keep every image, and
+                                  # every request then re-sends the whole run)
+  prompt_cache_key: astra-yam     # same key across trials: the system prompt + tools prefix stays cached
+  request_timeout_s: 300
+
+limits:
+  max_llm_calls: 100
+  max_waypoints: 3000
+  max_trial_seconds: 1200
+  max_consecutive_rejections: 5
+  strict_gateway: false
+
+log_dir: /home/skild/savina/PromptRobots/runs
+home_on_end: false

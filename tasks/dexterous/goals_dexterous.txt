@@ -1,0 +1,37 @@
+# Dexterous manipulation — 10 goals. One goal per line; lines starting with # are ignored.
+# Setup, pass criteria and what each task probes: tasks/dexterous/README.md
+# Run:  scripts/run_astra_yam.sh run --config configs/skild_yam_8.yaml \
+#         --goals-file tasks/dexterous/goals_dexterous.txt --fast --release-tilt 80 --max-seconds 1800
+# REQUIRED: motion.tool_floor_z_m must be set to the measured table height — --release-tilt only lets the
+# gateway reject a tilt that would dip the jaw tips or the housing below that floor if the floor is set.
+# DX01 and DX09 need the tilt; the rest are fine with it available but do not require a large one.
+
+# DX01  watering can upright at (0.30, -0.20) with a little water in it; orange bowl at (0.32, -0.38)
+Pick up the watering can by its handle, pour what is in it into the orange bowl, then set the can back down upright.
+
+# DX02  orange bowl at (0.32, -0.24); white lid flat on the table at (0.30, -0.10)
+Pick up the white lid and lay it flat on top of the orange bowl, roughly centred on the opening.
+
+# DX03  fork at (0.28, -0.10), handle toward the arms; white plate at (0.34, -0.34)
+Pick up the fork and lay it on the white plate with its tines pointing away from the arms.
+
+# DX04  white plate flat at (0.30, -0.14); mint plate flat at (0.30, -0.34)
+Stack the mint plate on top of the white plate, aligned to within about 2 cm.
+
+# DX05  teal cup upright at (0.30, -0.20), a mark or the handle-side of the cup facing the arms
+Pick up the teal cup, turn it a quarter turn about vertical, and set it back down upright in the same spot.
+
+# DX06  wooden spoon at (0.28, -0.10), handle toward the arms; orange bowl at (0.32, -0.34)
+Pick up the wooden spoon and set it in the orange bowl with its handle resting on the rim, not dropped in flat.
+
+# DX07  white lid flat on the cutting board at (0.32, -0.24), at least 5 cm in from every edge
+The white lid is lying flat in the middle of the cutting board. Get it off the board and onto the table beside it.
+
+# DX08  teal cup upright at (0.32, -0.30); fork at (0.28, -0.10), handle toward the arms
+Pick up the fork and stand it in the teal cup, handle end down.
+
+# DX09  white mug upright at (0.30, -0.20) with a little water in it; orange bowl at (0.32, -0.38)
+Pick up the white mug by its handle, tip it over the orange bowl to empty it, then set the mug back down upright.
+
+# DX10  teal cup upright at (0.30, +0.10), in the left arm's lane; target spot at (0.32, -0.60), in the right arm's lane
+Pick up the teal cup with the left arm, hand it over to the right arm near the middle of the table, and have the right arm set it down upright on the right side.

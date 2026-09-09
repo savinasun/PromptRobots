@@ -1,0 +1,37 @@
+# Collision avoidance — 10 goals. One goal per line; lines starting with # are ignored.
+# Setup, pass criteria and what each task probes: tasks/collision/README.md
+# Run:  scripts/run_astra_yam.sh run --config configs/skild_yam_8.yaml \
+#         --goals-file tasks/collision/goals_collision.txt --fast
+# REQUIRED: motion.tool_floor_z_m must be set to the measured table height before running these.
+# CO03, CO04, CO08 and CO10 use both arms in the shared band (y_left in [-0.40, -0.21]); the gateway's
+# arm-to-arm clearance (2 cm links, 0.5 cm fingers) is the thing under test, so leave it at its default.
+
+# CO01  white mug at (0.32, -0.305); watering can at (0.32, -0.19) and teal cup at (0.32, -0.42), each ~11 cm from the mug
+The white mug stands between the watering can and the teal cup. Pick up the mug and lift it 15 cm straight up without touching either of the other two.
+
+# CO02  watering can at (0.30, -0.10); white plate directly beyond it at (0.44, -0.10)
+Move the left gripper to hover about 10 cm above the white plate on the far side of the watering can, without touching the can.
+
+# CO03  white plate at the midline (0.34, -0.305)
+Bring both grippers to hover about 10 cm above the white plate at the same time, one on each side of it, without the two arms touching each other.
+
+# CO04  teal cup at (0.30, -0.36); the right arm starts parked over (0.34, -0.28), between the left arm and the cup
+The right arm is parked over the middle of the table. Use the left arm to pick up the teal cup on the far side of it, and do not let the two arms touch.
+
+# CO05  blue plate at (0.32, -0.24) and mint plate at (0.32, -0.36), a 12 cm gap between their rims
+Lower the closed left gripper into the gap between the two plates until it is about 5 cm above the table, without touching either plate, then raise it again and call done.
+
+# CO06  white lid lying flat at (0.32, -0.20), nothing else nearby
+Move the left gripper to about 3 cm above the white lid without touching the lid or the table, hold there, then call done.
+
+# CO07  white mug at (0.28, -0.10); watering can at (0.34, -0.24); mint plate at (0.32, -0.40)
+Pick up the white mug and put it on the mint plate on the other side of the watering can, without knocking the can over.
+
+# CO08  teal cup at (0.30, -0.36) in the shared band
+Pick up the teal cup with the left arm and hold it about 15 cm above the table, then bring the right gripper to hover about 10 cm above the cup without touching the cup or the left arm, then call done.
+
+# CO09  blue, white and mint plates in a row at (0.32, -0.18), (0.32, -0.30) and (0.32, -0.42), 12 cm apart
+Three plates are in a row. Pick up the middle one and lift it clear without touching the other two.
+
+# CO10  empty table
+Park both arms over the far edge of the table, one on each side, about 20 cm above the table and well clear of each other, then call done.

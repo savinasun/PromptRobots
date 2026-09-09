@@ -1,0 +1,9 @@
+# Kitchen tabletop test goals (items.jpg). Ordered from no-contact to full manipulation.
+# Keep target objects 15-48 cm in front of the arm bases and within +/-25 cm laterally.
+# Note: with the reference bounds the two arms have no shared workspace (11 cm dead zone between their zones).
+# Sim note: the simulated mug is a plain cylinder (no handle); in --sim use "Pick up the white mug and place it on the white plate".
+Move the left gripper to hover about 5 cm above the white mug without touching anything, then call done.
+Hover the left gripper above the orange bowl and the right gripper above the green plate at the same time, then call done.
+Use the closed left gripper to push the teal cup about 10 cm to the left, keeping it upright.
+Pick up the teal cup, lift it about 10 cm, hold it for a moment, and set it back down where it was.
+Pick up the white mug by its handle and place it on the white plate.

@@ -1,0 +1,58 @@
+# Every piece of text the model is shown, apart from the two long prose files next to this one
+# (SYSTEM_PROMPT.md and TILT_NOTE.md). Nothing model-facing is hard-coded in astra_yam/*.py:
+# the loader is astra_yam/prompts.py and each key is addressed as e.g. prompt("tools.note").
+#
+# `>-` folds every line break into a single space, so a description stays one line in the request no
+# matter how it is wrapped here; `|-` keeps the line breaks exactly as written. Do not leave a blank
+# line inside a `>-` block (it becomes a newline). Braces are format placeholders and must be kept.
+
+tools:
+  move_to:
+    description: >-
+      Move to absolute Cartesian end-effector targets (meters for positions, radians for rotations, per the
+      dimension labels). The motion is a straight line interpolated at a fixed safe speed and the result reports
+      its step count. Unnamed dimensions hold their current value. Coordinates are absolute in the embodiment's
+      declared frame; on multi-arm embodiments each arm uses its own base frame and axes may differ between arms
+      depending on mounting. Rotation dimensions are absolute targets measured relative to the trial's start
+      orientation (0 means the start orientation) and interpolate linearly without wrapping, so prefer
+      intermediate values for large rotations. Per-dimension bounds: {bounds}.
+    targets: >-
+      Map of dimension name to value. Valid names: {dim_names}
+    note: >-
+      What you observe right now in the observation (images, if any, and state), and why you chose this motion.
+      The user reads these notes live and in the saved transcript to follow what you see and what you decide.
+      Write for them, in one or two plain sentences.
+  done:
+    description: >-
+      Declare the task finished. The session ends holding position. This is model-reported completion; the
+      operator confirms success.
+  give_up:
+    description: >-
+      Stop trying; the task cannot be completed. The trial ends.
+  hindsight: >-
+    What do you know now that you wish you had known at the start of this episode? Concrete, transferable facts
+    about this rig, task, or embodiment (camera mounting and extrinsics, table and base geometry, gripper axis
+    and offsets, controller behavior, metric scale), written as advice to a future agent attempting the same
+    task. Say 'none' if nothing qualifies.
+
+# One observation message per turn: this text, then a label + image per camera.
+observation:
+  text: |-
+    Current observation.
+    Instruction: {goal}
+    state[joint_pos]: {joint_pos}
+    state[eef_state]: {eef_state}
+    Gateway waypoints remaining in this session: {waypoints_remaining}.
+  camera_label: >-
+    camera '{camera}' (step {step}):
+  image_omitted: >-
+    [camera image omitted from history]
+
+# Messages the session adds to the running conversation.
+session:
+  goal: >-
+    Goal: {goal}
+  operator_feedback: >-
+    Operator feedback: {feedback}
+  tool_call_reminder: >-
+    Reminder: respond with exactly one tool call (move_to, done, or give_up).

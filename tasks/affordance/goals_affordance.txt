@@ -1,0 +1,36 @@
+# Affordance — 10 goals. One goal per line; lines starting with # are ignored.
+# Setup, pass criteria and what each task probes: tasks/affordance/README.md
+# Run:  scripts/run_astra_yam.sh run --config configs/skild_yam_8.yaml \
+#         --goals-file tasks/affordance/goals_affordance.txt --fast
+# Placement lanes (left-arm frame, y_right = y_left + 0.61) are in tasks/README.md.
+# Tilt is left at its default range: some of these need the tool turned, none need a large tilt.
+
+# AF01  white mug upright at (0.30, -0.10), handle pointing +y (toward the left arm)
+Pick up the white mug by its handle, lift it about 10 cm, hold it for a moment, and set it back down where it was.
+
+# AF02  watering can upright at (0.32, -0.305), handle at the back, spout pointing +y
+Pick up the watering can by its handle and set it down upright about 15 cm to the left of where it started.
+
+# AF03  wooden spoon at (0.30, -0.10), lying with its handle toward the left arm; orange bowl at (0.32, -0.36)
+Pick up the wooden spoon by its handle, not by the bowl of the spoon, and lay it in the orange bowl.
+
+# AF04  blue plate flat at (0.30, -0.10), nothing on it
+Pick up the blue plate by its rim and move it about 10 cm forward, away from the arms, keeping it flat.
+
+# AF05  fork at (0.28, -0.10) with its handle toward the arms; white plate at (0.34, -0.36)
+Pick up the fork by its handle and place it on the white plate.
+
+# AF06  teal cup lying on its side at (0.30, -0.10), mouth pointing +y
+The teal cup is lying on its side. Pick it up and set it down standing upright on the table.
+
+# AF07  spatula at (0.28, -0.10) with its handle toward the arms; cutting board at (0.34, -0.36)
+Pick up the spatula by its handle and lay it on the cutting board.
+
+# AF08  cutting board flat at (0.32, -0.20), long edge facing the arms
+Pick up the cutting board by its edge and move it about 10 cm to the right, keeping it flat on the table.
+
+# AF09  wooden spoon at (0.30, -0.05) and fork at (0.30, -0.20), both handles toward the arms; orange bowl at (0.34, -0.36)
+A wooden spoon and a fork are on the table. Pick up the one you would use to stir a bowl of soup and put it in the orange bowl.
+
+# AF10  white mug at (0.30, -0.10), fork at (0.30, -0.20), blue plate at (0.30, +0.15); mint plate at (0.36, -0.36)
+A mug, a fork and a plate are on the table. Pick up the one you can drink from and put it on the mint plate.

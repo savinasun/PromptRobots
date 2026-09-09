@@ -1,0 +1,269 @@
+<?xml version='1.0' encoding='utf-8'?>
+<robot name="bimanual_yam">
+<!--
+  Bimanual YAM URDF for kinematics (no visual/collision meshes).
+  Derived from skild-gello: third_party/robot_models/yam/yam.urdf (single-arm)
+  and gello/robots/fk_solvers/skild_yam.py (bimanual FK solver).
+
+  Hardware version: v2.x+ (base distance = 0.61 m between arm centers).
+  Left arm at origin, right arm offset by -0.61 m in Y.
+
+  FLU end-effector frames derived from:
+    - MuJoCo tcp_site: pos=(0,0,0), quat=(1,0,0,-1) → Rz(-90deg) relative to link_6
+    - urdf2standard: R=[[0,0,-1],[0,1,0],[1,0,0]] → Ry(+90deg)
+    - Combined: rpy="-1.5707963 -1.5707963 0" relative to link_6
+-->
+
+  <link name="bimanual_yam">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <mass value="1.0" />
+      <inertia ixx="1" iyy="1" izz="1" ixy="0" ixz="0" iyz="0" />
+    </inertial>
+  </link>
+
+  <!-- ================================================================== -->
+  <!-- LEFT ARM                                                           -->
+  <!-- ================================================================== -->
+
+  <link name="left_base_link">
+    <inertial>
+      <origin xyz="-7.22812e-05 2.52572e-05 0.0159932" rpy="0 0 0"/>
+      <mass value="0.822546"/>
+      <inertia ixx="0.00169415" ixy="2.43507e-07" ixz="-1.31515e-07" iyy="0.00066093" iyz="-9.11171e-07" izz="0.00155626"/>
+    </inertial>
+  </link>
+  <joint name="left_base_joint" type="fixed">
+    <parent link="bimanual_yam" />
+    <child link="left_base_link" />
+    <origin xyz="0 0 0" rpy="0 0 0" />
+  </joint>
+
+  <link name="left_link_1">
+    <inertial>
+      <origin xyz="-0.00192861 -0.00795735 0.0208176" rpy="0 0 0"/>
+      <mass value="0.12415"/>
+      <inertia ixx="5.98038e-05" ixy="-4.5902e-06" ixz="7.411e-06" iyy="0.000169215" iyz="1.68342e-05" izz="0.000156182"/>
+    </inertial>
+  </link>
+  <joint name="left_joint1" type="revolute">
+    <parent link="left_base_link"/>
+    <child link="left_link_1"/>
+    <origin xyz="-3.55271e-18 -1.05495e-18 0.0631" rpy="0 0 1.5708"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="10" velocity="10" lower="-2.61799" upper="3.13"/>
+  </joint>
+
+  <link name="left_link_2">
+    <inertial>
+      <origin xyz="0.132008 2.10599e-06 0.000293073" rpy="0 0 0"/>
+      <mass value="1.24434"/>
+      <inertia ixx="0.000683304" ixy="1.99503e-09" ixz="3.68337e-09" iyy="0.0121902" iyz="3.20067e-09" izz="0.0121318"/>
+    </inertial>
+  </link>
+  <joint name="left_joint2" type="revolute">
+    <parent link="left_link_1"/>
+    <child link="left_link_2"/>
+    <origin xyz="2.5e-05 -0.02 0.0409" rpy="1.5708 -1.98004e-28 1.5708"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="10" velocity="10" lower="0" upper="3.65"/>
+  </joint>
+
+  <link name="left_link_3">
+    <inertial>
+      <origin xyz="-0.121816 -0.054846 -0.000111108" rpy="0 0 0"/>
+      <mass value="0.853698"/>
+      <inertia ixx="0.000835003" ixy="-0.000536647" ixz="-1.03114e-05" iyy="0.00694973" iyz="-6.38588e-06" izz="0.00696195"/>
+    </inertial>
+  </link>
+  <joint name="left_joint3" type="revolute">
+    <parent link="left_link_2"/>
+    <child link="left_link_3"/>
+    <origin xyz="0.264 0 6.77626e-21" rpy="-3.14159 1.26218e-29 7.88861e-31"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="10" velocity="10" lower="0" upper="3.13"/>
+  </joint>
+
+  <link name="left_link_4">
+    <inertial>
+      <origin xyz="-0.0569778 -0.0527104 0.000154878" rpy="0 0 0"/>
+      <mass value="0.463511"/>
+      <inertia ixx="0.000582374" ixy="-0.000250406" ixz="-7.15749e-06" iyy="0.000491129" iyz="-3.22486e-06" izz="0.000744878"/>
+    </inertial>
+  </link>
+  <joint name="left_joint4" type="revolute">
+    <parent link="left_link_3"/>
+    <child link="left_link_4"/>
+    <origin xyz="-0.245 -0.0600003 -1.9984e-15" rpy="-5.65471e-31 -1.1507e-13 2.94252e-43"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="10" velocity="10" lower="-1.5708" upper="1.5708"/>
+  </joint>
+
+  <link name="left_link_5">
+    <inertial>
+      <origin xyz="3.64861e-05 0.00025665 0.0353526" rpy="0 0 0"/>
+      <mass value="0.350962"/>
+      <inertia ixx="0.000197798" ixy="-3.20004e-07" ixz="-2.01757e-07" iyy="0.000172615" iyz="-1.10998e-05" izz="0.000152291"/>
+    </inertial>
+  </link>
+  <joint name="left_joint5" type="revolute">
+    <parent link="left_link_4"/>
+    <child link="left_link_5"/>
+    <origin xyz="-0.0739968 -0.0395003 2.44738e-05" rpy="-1.5708 1.5708 0"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="10" velocity="10" lower="-1.5708" upper="1.5708"/>
+  </joint>
+
+  <link name="left_link_6">
+    <inertial>
+      <origin xyz="-5.10177e-05 -0.00269952 0.0481778" rpy="0 0 0"/>
+      <mass value="0.60366"/>
+      <inertia ixx="0.000955866" ixy="1.47274e-05" ixz="-5.44088e-06" iyy="0.000761363" iyz="0.000106418" izz="0.000508596"/>
+    </inertial>
+  </link>
+  <joint name="left_joint6" type="revolute">
+    <parent link="left_link_5"/>
+    <child link="left_link_6"/>
+    <origin xyz="-4.0742e-16 0.0353 0.0395" rpy="-1.5708 3.81639e-16 4.68582e-15"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="10" velocity="10" lower="-2.0944" upper="2.0944"/>
+  </joint>
+
+  <!-- FLU (Front-Left-Up) convention frame: X=forward, Y=left, Z=up
+       Derived from MuJoCo tcp_site Rz(-90deg) composed with urdf2standard Ry(+90deg) -->
+  <link name="left_ee_flu">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <mass value="0.000001" />
+      <inertia ixx="0" ixy="0" ixz="0" iyy="0" iyz="0" izz="0" />
+    </inertial>
+  </link>
+  <joint name="left_ee_flu_joint" type="fixed">
+    <parent link="left_link_6" />
+    <child link="left_ee_flu" />
+    <origin xyz="0 0 0" rpy="-1.5707963 -1.5707963 0" />
+  </joint>
+
+  <!-- ================================================================== -->
+  <!-- RIGHT ARM                                                          -->
+  <!-- ================================================================== -->
+
+  <link name="right_base_link">
+    <inertial>
+      <origin xyz="-7.22812e-05 2.52572e-05 0.0159932" rpy="0 0 0"/>
+      <mass value="0.822546"/>
+      <inertia ixx="0.00169415" ixy="2.43507e-07" ixz="-1.31515e-07" iyy="0.00066093" iyz="-9.11171e-07" izz="0.00155626"/>
+    </inertial>
+  </link>
+  <joint name="right_base_joint" type="fixed">
+    <parent link="bimanual_yam" />
+    <child link="right_base_link" />
+    <origin xyz="0 -0.61 0" rpy="0 0 0" />
+  </joint>
+
+  <link name="right_link_1">
+    <inertial>
+      <origin xyz="-0.00192861 -0.00795735 0.0208176" rpy="0 0 0"/>
+      <mass value="0.12415"/>
+      <inertia ixx="5.98038e-05" ixy="-4.5902e-06" ixz="7.411e-06" iyy="0.000169215" iyz="1.68342e-05" izz="0.000156182"/>
+    </inertial>
+  </link>
+  <joint name="right_joint1" type="revolute">
+    <parent link="right_base_link"/>
+    <child link="right_link_1"/>
+    <origin xyz="-3.55271e-18 -1.05495e-18 0.0631" rpy="0 0 1.5708"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="10" velocity="10" lower="-2.61799" upper="3.13"/>
+  </joint>
+
+  <link name="right_link_2">
+    <inertial>
+      <origin xyz="0.132008 2.10599e-06 0.000293073" rpy="0 0 0"/>
+      <mass value="1.24434"/>
+      <inertia ixx="0.000683304" ixy="1.99503e-09" ixz="3.68337e-09" iyy="0.0121902" iyz="3.20067e-09" izz="0.0121318"/>
+    </inertial>
+  </link>
+  <joint name="right_joint2" type="revolute">
+    <parent link="right_link_1"/>
+    <child link="right_link_2"/>
+    <origin xyz="2.5e-05 -0.02 0.0409" rpy="1.5708 -1.98004e-28 1.5708"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="10" velocity="10" lower="0" upper="3.65"/>
+  </joint>
+
+  <link name="right_link_3">
+    <inertial>
+      <origin xyz="-0.121816 -0.054846 -0.000111108" rpy="0 0 0"/>
+      <mass value="0.853698"/>
+      <inertia ixx="0.000835003" ixy="-0.000536647" ixz="-1.03114e-05" iyy="0.00694973" iyz="-6.38588e-06" izz="0.00696195"/>
+    </inertial>
+  </link>
+  <joint name="right_joint3" type="revolute">
+    <parent link="right_link_2"/>
+    <child link="right_link_3"/>
+    <origin xyz="0.264 0 6.77626e-21" rpy="-3.14159 1.26218e-29 7.88861e-31"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="10" velocity="10" lower="0" upper="3.13"/>
+  </joint>
+
+  <link name="right_link_4">
+    <inertial>
+      <origin xyz="-0.0569778 -0.0527104 0.000154878" rpy="0 0 0"/>
+      <mass value="0.463511"/>
+      <inertia ixx="0.000582374" ixy="-0.000250406" ixz="-7.15749e-06" iyy="0.000491129" iyz="-3.22486e-06" izz="0.000744878"/>
+    </inertial>
+  </link>
+  <joint name="right_joint4" type="revolute">
+    <parent link="right_link_3"/>
+    <child link="right_link_4"/>
+    <origin xyz="-0.245 -0.0600003 -1.9984e-15" rpy="-5.65471e-31 -1.1507e-13 2.94252e-43"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="10" velocity="10" lower="-1.5708" upper="1.5708"/>
+  </joint>
+
+  <link name="right_link_5">
+    <inertial>
+      <origin xyz="3.64861e-05 0.00025665 0.0353526" rpy="0 0 0"/>
+      <mass value="0.350962"/>
+      <inertia ixx="0.000197798" ixy="-3.20004e-07" ixz="-2.01757e-07" iyy="0.000172615" iyz="-1.10998e-05" izz="0.000152291"/>
+    </inertial>
+  </link>
+  <joint name="right_joint5" type="revolute">
+    <parent link="right_link_4"/>
+    <child link="right_link_5"/>
+    <origin xyz="-0.0739968 -0.0395003 2.44738e-05" rpy="-1.5708 1.5708 0"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="10" velocity="10" lower="-1.5708" upper="1.5708"/>
+  </joint>
+
+  <link name="right_link_6">
+    <inertial>
+      <origin xyz="-5.10177e-05 -0.00269952 0.0481778" rpy="0 0 0"/>
+      <mass value="0.60366"/>
+      <inertia ixx="0.000955866" ixy="1.47274e-05" ixz="-5.44088e-06" iyy="0.000761363" iyz="0.000106418" izz="0.000508596"/>
+    </inertial>
+  </link>
+  <joint name="right_joint6" type="revolute">
+    <parent link="right_link_5"/>
+    <child link="right_link_6"/>
+    <origin xyz="-4.0742e-16 0.0353 0.0395" rpy="-1.5708 3.81639e-16 4.68582e-15"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="10" velocity="10" lower="-2.0944" upper="2.0944"/>
+  </joint>
+
+  <!-- FLU (Front-Left-Up) convention frame: X=forward, Y=left, Z=up
+       Derived from MuJoCo tcp_site Rz(-90deg) composed with urdf2standard Ry(+90deg) -->
+  <link name="right_ee_flu">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <mass value="0.000001" />
+      <inertia ixx="0" ixy="0" ixz="0" iyy="0" iyz="0" izz="0" />
+    </inertial>
+  </link>
+  <joint name="right_ee_flu_joint" type="fixed">
+    <parent link="right_link_6" />
+    <child link="right_ee_flu" />
+    <origin xyz="0 0 0" rpy="-1.5707963 -1.5707963 0" />
+  </joint>
+
+</robot>
