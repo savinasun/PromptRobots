@@ -61,10 +61,18 @@ def test_pick_up_pivots_upright_and_lid_can_be_opened_by_the_other_arm():
     p = gw.move_to({"right_gripper": 0.1}, 10 ** 6)[0]
     assert p["ok"], p
     assert case.lid_holder == "right", world.events
-    # swing the lid: mostly straight up about the hinge (swinging back would approach the left gripper's housing)
+    # swing the lid up and over the hinge. The hinge is level with the seam, so lifting alone only cracks
+    # the lid open; carrying the pinch back over the hinge is what swings it far enough to latch.
     p = gw.move_to({"right_z": float(lid_c[2]) + 0.07}, 10 ** 6)[0]
     assert p["ok"], p
+    assert 0.5 < case.lid_angle < case.OPEN_LATCH_RAD and not case.is_open, np.degrees(case.lid_angle)
+    p = gw.move_to({"right_z": float(lid_c[2]) + 0.10}, 10 ** 6)[0]
+    assert p["ok"], p
     assert case.lid_angle > 1.0 and case.is_open, np.degrees(case.lid_angle)
+    # from that height there is room to carry the pinch back over the hinge, which opens it the rest of the way
+    p = gw.move_to({"right_x": float(lid_c[0]) - 0.02}, 10 ** 6)[0]
+    assert p["ok"], p
+    assert case.lid_angle > 1.4, np.degrees(case.lid_angle)
     # release: the lid stays open; the case is still held by the left arm
     assert gw.move_to({"right_gripper": 1.0}, 10 ** 6)[0]["ok"]
     assert case.lid_holder is None and case.is_open and case.held_by == "left"
@@ -83,3 +91,23 @@ def test_lid_snaps_shut_when_released_early():
     openings = {"left": 0.03, "right": 0.05}                     # right jaws open wide -> release
     world._update_lid(case, openings)
     assert case.lid_holder is None and case.lid_angle == 0.0
+
+
+def test_case_meshes_agree_with_the_parametric_case():
+    """The Apple-derived meshes viser draws and SimCase's constants must describe one object."""
+    from astra_yam.viser_ui import case_meshes
+
+    meshes = case_meshes()
+    assert meshes, "astra_yam/assets/airpods/case_*.ply missing - run scripts/build_airpods_asset.py"
+    case = SimCase("airpods case", [0.0, 0.0, 0.0])
+    case.hanging = True
+    body = meshes["body"].vertices + case.body_center()          # drawn at body_center() / lid_center()
+    lid = meshes["lid"].vertices + case.lid_center()
+    lo = np.minimum(body.min(0), lid.min(0))
+    hi = np.maximum(body.max(0), lid.max(0))
+    assert hi - lo == pytest.approx([case.H, case.W, case.D], abs=2e-4)     # shut case fills the box
+    assert lo == pytest.approx([-case.H / 2, -case.W / 2, -case.D / 2], abs=2e-4)
+    assert body[:, 2].max() == pytest.approx(case.D / 2 - case.LID, abs=2e-4)   # seam == top of the body
+    hinge = case.hinge()
+    assert hinge[0] < 0 and hinge[2] < body[:, 2].max()           # behind the centre, below the seam
+    assert lid[:, 2].min() < body[:, 2].max()                     # lid flange reaches down inside the body

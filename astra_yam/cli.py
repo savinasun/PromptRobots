@@ -126,7 +126,7 @@ def _config_from_args(args) -> PipelineConfig:
         overrides["astra.script_path"] = args.script
     for attr, key in [("model", "astra.model"), ("effort", "astra.reasoning_effort"), ("max_calls", "limits.max_llm_calls"),
                       ("prompt_budget", "limits.prompt_llm_calls"),
-                      ("max_waypoints", "limits.max_waypoints"), ("max_seconds", "limits.max_trial_seconds"),
+                      ("max_", "limits.max_"), ("max_seconds", "limits.max_trial_seconds"),
                       ("image_history", "astra.image_history"), ("speed", "motion.linear_speed_mps"),
                       ("log_dir", "log_dir"), ("feedback_file", "operator_feedback_file")]:
         v = getattr(args, attr, None)

@@ -185,8 +185,8 @@ class AstraConfig:
 @dataclass
 class LimitsConfig:
     max_llm_calls: int = 100
-    max_waypoints: int = 3000
-    max_trial_seconds: float = 1200.0
+    max_waypoints: int = 10000
+    max_trial_seconds: float = 1800.0
     max_consecutive_rejections: int = 5
     strict_gateway: bool = False        # True: the first rejected packet ends the session (reference semantics)
     prompt_llm_calls: Optional[int] = None  # budget announced in the system prompt (None = max_llm_calls);

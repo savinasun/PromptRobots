@@ -90,6 +90,38 @@ def lan_ip() -> str:
 
 
 # ---------------------------------------------------------------------------
+# AirPods case meshes (Apple's AR Quick Look model; see scripts/build_airpods_asset.py)
+# ---------------------------------------------------------------------------
+CASE_ASSET_DIR = Path(__file__).resolve().parent / "assets" / "airpods"
+_CASE_MESH_CACHE: Optional[Dict[str, object]] = None
+CASE_LID_RGB = (228, 228, 233)
+
+
+def case_meshes() -> Dict[str, object]:
+    """Body and lid of the AirPods case in SimCase's standing frame, or {} if the asset is missing."""
+    global _CASE_MESH_CACHE
+    if _CASE_MESH_CACHE is None:
+        import trimesh
+
+        out = {}
+        for part in ("body", "lid"):
+            path = CASE_ASSET_DIR / f"case_{part}.ply"
+            if path.exists():
+                out[part] = trimesh.load(str(path), process=False)
+        if len(out) != 2:
+            print(f"[viser] no AirPods case meshes in {CASE_ASSET_DIR}; drawing boxes instead")
+            out = {}
+        _CASE_MESH_CACHE = out
+    return _CASE_MESH_CACHE
+
+
+def _tinted(mesh, rgb: Sequence[int]):
+    m = mesh.copy()
+    m.visual.face_colors = (*rgb, 255)
+    return m
+
+
+# ---------------------------------------------------------------------------
 # link meshes from the i2rt MJCF
 # ---------------------------------------------------------------------------
 class LinkMeshes:
@@ -297,10 +329,17 @@ class ViserVisualizer:
         for name, obj in self.world.objects.items():
             node = f"/objects/{_slug(name)}"
             if isinstance(obj, SimCase):
-                body = sc.add_box(node + "/body", color=obj.color_rgb, dimensions=self._case_body_dims(obj),
-                                  position=obj.body_center())
-                self._case_lids[name] = sc.add_box(node + "/lid", color=(225, 225, 230), dimensions=obj.lid_dims(),
-                                                   position=obj.lid_center())
+                meshes = case_meshes()
+                if meshes:
+                    body = sc.add_mesh_trimesh(node + "/body", _tinted(meshes["body"], obj.color_rgb),
+                                               position=obj.body_center())
+                    self._case_lids[name] = sc.add_mesh_trimesh(node + "/lid", _tinted(meshes["lid"], CASE_LID_RGB),
+                                                                position=obj.lid_center())
+                else:
+                    body = sc.add_box(node + "/body", color=obj.color_rgb, dimensions=self._case_body_dims(obj),
+                                      position=obj.body_center())
+                    self._case_lids[name] = sc.add_box(node + "/lid", color=CASE_LID_RGB,
+                                                       dimensions=obj.lid_dims(), position=obj.lid_center())
                 self._label_specs[node + "_label"] = (obj.name, lambda o=obj: o.pos + np.array([0, 0, o.height / 2 + 0.03]))
                 self._object_handles[name] = (body, node + "_label")
                 continue
@@ -510,22 +549,27 @@ class ViserVisualizer:
         return (case.H, case.W, case.D - case.LID) if case.hanging else (case.D - case.LID, case.W, case.H)
 
     def _update_case(self, name: str, case, body_handle) -> None:
+        # the meshes are modelled standing; laying the case down is +90 deg about y
+        lay = np.eye(3) if case.hanging else Rotation.from_euler("y", np.pi / 2).as_matrix()
+        meshes = bool(case_meshes())
         body_handle.position = case.body_center()
+        if meshes:
+            body_handle.wxyz = wxyz_from_matrix(lay)
         lid = self._case_lids.get(name)
-        dims_body, dims_lid = self._case_body_dims(case), case.lid_dims()
-        try:
-            body_handle.dimensions = dims_body
-            if lid is not None:
-                lid.dimensions = dims_lid
-        except Exception:  # noqa: BLE001 - older viser without settable dimensions
-            pass
+        if not meshes:
+            try:
+                body_handle.dimensions = self._case_body_dims(case)
+                if lid is not None:
+                    lid.dimensions = case.lid_dims()
+            except Exception:  # noqa: BLE001 - older viser without settable dimensions
+                pass
         if lid is None:
             return
         hinge = case.hinge()
         sign = -1.0 if case.hanging else 1.0
         rot = Rotation.from_euler("y", sign * case.lid_angle).as_matrix()
         lid.position = hinge + rot @ (case.lid_center() - hinge)
-        lid.wxyz = wxyz_from_matrix(rot)
+        lid.wxyz = wxyz_from_matrix(rot @ lay if meshes else rot)
 
     def _update_objects_unlocked(self) -> None:
         from astra_yam.sim import SimCase

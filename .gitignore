@@ -6,3 +6,6 @@ __pycache__/
 .secrets/
 *.png
 *.jpg
+
+# Apple AR asset fetched on demand by scripts/build_airpods_asset.py, not redistributed
+astra_yam/assets/airpods/*.usdz

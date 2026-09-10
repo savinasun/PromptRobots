@@ -1,3 +1,2 @@
 # One goal per line; lines starting with # are ignored. The operator is asked to reset the scene between goals.
-pick up blue and place ontop of green block
-raise and lower both arms
+Pick up the airpods case using left arm, then open the case using right arm.

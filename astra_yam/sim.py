@@ -188,16 +188,21 @@ class SimCan(SimObject):
 
 
 class SimCase(SimObject):
-    """AirPods Pro (2nd gen) charging case reconstructed from Apple's dimensions: 60.6 x 45.2 x 21.7 mm, 16 mm lid,
-    hinge along the top rear edge. Lies flat on a support (lid face up, hinge at the far edge). When lifted by its
-    width it pivots to hang upright with the lid on top; the other gripper can then pinch the lid across its
-    21.7 mm depth (jaws along x) and swing it open about the hinge.
+    """AirPods Pro charging case, 60.6 x 45.2 x 21.7 mm. Lies flat on a support (hinge at the far edge). When
+    lifted by its width it pivots to hang upright with the lid on top; the other gripper can then pinch the lid
+    across its 21.7 mm depth (jaws along x) and swing it open about the hinge.
+
+    LID, HINGE and MAX_OPEN_RAD are measured off Apple's AR Quick Look model of the product, which
+    scripts/build_airpods_asset.py also converts into the meshes viser draws. The hinge is what the earlier
+    hand-estimated box got most wrong: it is level with the seam and just inside the rear face, not up on the
+    top edge, so the lid swings on a ~12 mm arm and opening it means moving up *and back*, not straight up.
     """
 
     W, D, H = 0.0606, 0.0452, 0.0217        # width (y when flat), standing height (x when flat), thickness (z when flat)
-    LID = 0.016                             # lid height when standing
+    LID = 0.0111                            # visible lid height above the seam, when standing
+    HINGE = (-0.00986, 0.00992)             # hinge axis (x, z) relative to the case centre, standing
     OPEN_LATCH_RAD = 1.0                    # released above this angle the lid stays open, below it snaps shut
-    MAX_OPEN_RAD = 1.9
+    MAX_OPEN_RAD = 2.0                      # Apple's model poses the lid 114.7 deg open
 
     def __init__(self, name: str, pos: Sequence[float], color_bgr: Tuple[int, int, int] = (240, 240, 240)):
         super().__init__(name, pos, (self.D, self.W, self.H), color_bgr, "box")
@@ -241,10 +246,11 @@ class SimCase(SimObject):
         return (self.H, self.W, self.LID) if self.hanging else (self.LID, self.W, self.H)
 
     def hinge(self) -> np.ndarray:
-        """Point on the hinge line (top rear edge when hanging; far top edge when flat)."""
+        """Point on the hinge axis: just inside the rear face, level with the seam."""
+        hx, hz = self.HINGE
         if self.hanging:
-            return self.pos + np.array([-self.H / 2, 0.0, self.D / 2])
-        return self.pos + np.array([self.D / 2, 0.0, self.H / 2])
+            return self.pos + np.array([hx, 0.0, hz])
+        return self.pos + np.array([hz, 0.0, -hx])          # laid down = standing rotated +90 deg about y
 
     def lid_free_edge(self) -> np.ndarray:
         """Mid-point of the lid's free (front, bottom) edge in the closed configuration."""
