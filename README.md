@@ -49,31 +49,37 @@ scripts/run_astra_yam.sh run --config configs/skild_yam_8.yaml --goal "Pick up b
 scripts/run_astra_yam.sh run --config configs/skild_yam_8.yaml --goals-file tasks/spatial/goals_spatial.txt
 ```
 
-## Your command (argument guide)
+## Advanced Usage Guide
 
-```bash
-scripts/run_astra_yam.sh run --config configs/skild_yam_8.yaml --viser --yes \
-  --goal "Pick only one pencil and place it in the green plate." \
-  --effort low \
-  --image-history 2 \
-  --fast --fast-sim \
-  --max-calls 100 \
-  --prompt-budget 100 \
-  --max-seconds 2100
-```
+### Core arguments
 
 - `run`: start one closed-loop trial.
-- `--config ...yaml`: load base config.
-- `--viser`: browser 3D/operator UI.
-- `--yes`: skip confirmation prompts.
-- `--goal "..."`: task instruction.
-- `--effort low`: model reasoning effort (`low|medium|high|xhigh|max`).
-- `--image-history 2`: keep fewer past images (lower token growth).
-- `--fast`: faster motion profile.
-- `--fast-sim`: sim-only skip real-time waits (ignored on real robot backend).
-- `--max-calls 100`: hard cap on model calls.
-- `--prompt-budget 100`: call budget announced to model (usually same as `--max-calls`).
-- `--max-seconds 2100`: wall-clock timeout (35 min).
+- `--config PATH`: load base YAML config (recommended for real robot sessions).
+- `--goal "TEXT"`: single natural-language task instruction.
+- `--goals-file PATH`: run multiple goals (one per line, `#` comments allowed).
+- `--sim`: shorthand for `--robot sim --cameras sim`.
+- `--viser`: enable browser 3D/operator UI.
+- `--yes` / `-y`: skip confirmation prompts.
+
+### Argument reference
+
+- `--model NAME`: override model from config.
+- `--effort {low|medium|high|xhigh|max}`: reasoning effort.
+- `--image-history N`: keep images for latest N observations (lower N saves tokens).
+- `--max-calls N`: hard cap on LLM calls.
+- `--prompt-budget N`: budget announced to the model (usually same as `--max-calls`).
+- `--max-seconds S`, `--max-waypoints N`: hard time/waypoint limits.
+- `--fast`: use faster motion defaults (overridden by explicit `--speed` or `--set`).
+- `--speed MPS`: set linear Cartesian speed directly.
+- `--release-tilt DEG`: constrain pitch/roll bounds symmetrically to `±DEG`.
+- `--no-home`: do not move to home pose at trial start.
+- `--home-on-end`: return to home pose at trial end.
+- `--strict-gateway`: first rejected command packet ends the session.
+- `--robot {zmq|sim}`, `--cameras {realsense|sim|none}`: backend selection.
+- `--host HOST`, `--port PORT`: robot server endpoint override.
+- `--scene {blocks|kitchen|airpods|chili|empty}`: simulator scene preset.
+- `--fast-sim`: sim-only skip real-time sleeps.
+- `--set KEY=VALUE`: override config keys (dotted paths supported, JSON-parsed values).
 
 ## Notes on latest structure
 
