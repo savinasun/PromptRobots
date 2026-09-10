@@ -6,6 +6,51 @@ Closed-loop runner for bimanual YAM arms.
 - Astra returns one tool call (`move_to`, `done`, `give_up`)
 - Gateway validates, runs IK/safety checks, and executes motion
 
+## Shared prompts and improvement harness
+
+Use `--dynamic-scene` for task-independent reobservation, short actions, and
+episode-local lessons. Change tasks through `--goal` or `--goals-file`; optional
+`--policy-notes` adds explicit advice. See [the prompt guide](docs/PROMPTS.md)
+for the exact request contents, `show-prompt --bundle-json`, and a multi-task
+evaluation suite. The [moving-bowl guide](docs/AIRPOD_BOWL.md) describes live
+disturbance controls; [measured results](docs/AIRPOD_BOWL_RESULTS.md) distinguish
+the earlier task-specific experiments from the generalized prompt.
+
+The `research` command runs ENPIRE-style reset → execute → verify → record →
+refine experiments around the existing YAM runner. Each candidate changes only
+policy advice; the controller, reset, verifier, evaluation cases, and budgets stay
+fixed. A `done` call is a completion claim, not a successful evaluation.
+
+```bash
+# Offline integration check: scripted policy and optimizer, no API or hardware
+scripts/run_astra_yam.sh research --sim --mock-astra --mock-optimizer \
+  --iterations 2 --output runs/airpods-offline-001
+
+# Live Astra prompt search in simulation (six trials at most with this suite)
+scripts/run_astra_yam.sh research --sim --iterations 2 --max-calls 24 \
+  --max-seconds 240 --output runs/airpods-search-001
+
+# Inspect a strategy interactively with the existing 3D UI
+scripts/run_astra_yam.sh run --sim --scene airpods --viser \
+  --policy-notes configs/AIRPODS_STRATEGY.md \
+  --goal "Open the AirPods case lid and release the lid while supporting the body."
+```
+
+The examples above retain the earlier lid-opening suite. To evaluate one shared
+policy across stacking, lid opening, and container placement, select
+`--suite configs/multitask_research.yaml --dynamic-scene`. Use `--iterations 0`
+for six baseline episodes without optimization or imported task advice.
+
+Read `runs/airpods-search-001/report.md`, the candidate diffs, and decision JSON
+files. `best_policy.md` contains the selected additional task advice (it can be
+empty when the original prompt wins). Reuse it with `run --policy-notes PATH`.
+Use a new output directory for every experiment; previous evidence is retained.
+
+See [the research guide](docs/RESEARCH.md) for feedback, evaluation semantics,
+ENPIRE integration, experiment provenance, and real-station requirements.
+The [initial live Astra results](docs/AIRPODS_RESULTS.md) document reduced calls
+and rejections with better partial progress, but no verified lid openings.
+
 ## Setup
 
 Use the `gello` conda env via:

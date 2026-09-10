@@ -116,6 +116,10 @@ class SafetyGateway:
         # Emergency stop. Any thread (the viser button, a signal handler) may set it; `execute` checks it before
         # every joint command and stops the motion where it is, so the latency is one control tick.
         self.estop: Optional[threading.Event] = None
+        self.reobserve: Optional[threading.Event] = None
+        if cfg.reactive.enabled:
+            from astra_yam.reactive import validate_reactive
+            validate_reactive(cfg.reactive)
         # Last *commanded* gripper value per arm. A gripper holding an object stalls above its command
         # (e.g. measured 0.74 for a 7 cm cup, commanded 0.1); "unnamed dimensions hold their current value"
         # must therefore hold the command, not the measurement, or every later move would loosen the grip.
@@ -409,10 +413,18 @@ class SafetyGateway:
         t_next = time.perf_counter()
         n = len(plan.q_path)
         q_last = plan.start_q.copy()
+        def pause():
+            for arm in ARMS:
+                self.gripper_cmd[arm] = float(q_last[ARM_GRIPPER_INDEX[arm]])
+            self.hold()
+            return ExecutionResult(True, "observation_required", executed,
+                                   "motion paused before target completion; observe and replan from measured state", max_err)
         for i, wp in enumerate(plan.q_path):
             for s in range(1, substeps + 1):
                 if self.estop is not None and self.estop.is_set():
                     return self._emergency_hold(q_last, executed, max_err)
+                if self.reobserve is not None and self.reobserve.is_set():
+                    return pause()
                 q_cmd = q_prev + (wp - q_prev) * (s / substeps)
                 self.robot.command_joint_positions(q_cmd)
                 q_last = q_cmd
@@ -438,6 +450,9 @@ class SafetyGateway:
                 for arm in ARMS:
                     self.gripper_cmd[arm] = float(wp[ARM_GRIPPER_INDEX[arm]])
                 return ExecutionResult(False, "timeout", executed, "trial time limit reached during motion", max_err)
+            if self.cfg.reactive.enabled and not last and executed >= max(
+                    1, int(self.cfg.reactive.max_motion_seconds * m.cadence_hz)):
+                return pause()
         for arm in ARMS:
             self.yaw_ref[arm] = plan.goals[arm].yaw
             self.gripper_cmd[arm] = plan.goals[arm].gripper
@@ -449,6 +464,14 @@ class SafetyGateway:
                 ) -> Tuple[dict, Optional[MotionPlan], Optional[ExecutionResult]]:
         """Full gateway pass. Returns (payload for the model, plan, execution result)."""
         try:
+            if self.cfg.reactive.enabled and isinstance(targets, dict):
+                # Validate first so malformed model fields cannot bypass the normal
+                # rejection path through comparison/type errors.
+                self.validate_targets(targets)
+                opening = any(f"{a}_gripper" in targets and targets[f"{a}_gripper"] > self.gripper_cmd[a] + 1e-6
+                              for a in ARMS)
+                if opening and any(k.rsplit("_", 1)[-1] != "gripper" for k in targets):
+                    raise GatewayRejection("dynamic scene: opening the gripper must be separate from pose targets")
             plan = self.plan(targets)
         except GatewayRejection as e:
             return {"ok": False, "status": "rejected", "reason": str(e)}, None, None
@@ -471,6 +494,8 @@ class SafetyGateway:
         return payload, plan, res
 
     def hold(self) -> np.ndarray:
-        q = self.robot.get_joint_positions()
+        q = np.asarray(self.robot.get_joint_positions(), dtype=float).copy()
+        for arm in ARMS:
+            q[ARM_GRIPPER_INDEX[arm]] = self.gripper_cmd[arm]
         self.robot.command_joint_positions(q)
         return q

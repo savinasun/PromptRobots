@@ -24,7 +24,7 @@ def _setup(scene):
 
 
 def test_scene_presets():
-    assert set(SCENES) == {"blocks", "kitchen", "airpods", "chili", "empty"}
+    assert set(SCENES) == {"blocks", "kitchen", "airpods", "airpod_bowl", "chili", "empty"}
     kitchen = SimWorld(scene="kitchen")
     assert kitchen.objects["teal cup"].graspable and kitchen.objects["white mug"].graspable
     assert not kitchen.objects["white plate"].graspable          # 20 cm wide > 9.5 cm jaws

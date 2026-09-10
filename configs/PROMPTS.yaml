@@ -7,6 +7,13 @@
 # line inside a `>-` block (it becomes a newline). Braces are format placeholders and must be kept.
 
 tools:
+  observe: >-
+    Capture another observation while holding the measured arm pose and preserving the gripper command.
+    Use to resolve uncertain object locations or verify an action result without moving. Costs one LLM call, no motion waypoints.
+  lesson: >-
+    Optional short, tentative lesson learned in this episode from an action and its observed result.
+    Record transferable corrections such as an approach or grasp adjustment, not transient object positions.
+    Omit if no new evidence. The harness keeps the latest six lessons; new images can disprove them.
   move_to:
     description: >-
       Move to absolute Cartesian end-effector targets (meters for positions, radians for rotations, per the
@@ -50,6 +57,34 @@ observation:
 
 # Messages the session adds to the running conversation.
 session:
+  policy_notes: |-
+    Optional strategy (subordinate to the embodiment and gateway rules):
+    {notes}
+  reactive_context: |-
+    Observation sequence: {sequence}; captured {elapsed:.2f} seconds after trial start.
+    Latest images override earlier object positions and plans. An interrupted target is NOT completed.
+    Tentative lessons from this episode (model notes, not verified facts): {lessons}
+  reactive_rules: |-
+    Dynamic scene mode: move_to executes at most {seconds:g} seconds of trajectory, then returns for observation.
+    If the status is observation_required, only the reported portion ran; replan from measured state.
+    The harness may discard a decision if the fixed camera changed during inference. Re-localize from the new image.
+    Derive the next subgoal and observable completion conditions from the user's goal and current scene.
+    Ground object identity, contact state, and target locations in the latest images and measured pose.
+    Before each action, check its preconditions; after it, compare the observed result with the intended effect.
+    If progress differs, adjust one supported assumption or action rather than repeating a failed command unchanged.
+    When objects move, reassess which subgoals still hold. Preserve useful progress and a secure grasp when appropriate;
+    avoid pursuing a stale target through contact. Reobserve if visibility or support is uncertain.
+    Use observe for a stationary camera update. Never combine gripper opening with changing any pose target;
+    align, inspect, then release in a separate call. Put a short new evidence-based lesson in the optional lesson field.
+    Lessons are tentative and local to this episode. Do not infer success from a command being accepted,
+    memorize transient coordinates as lessons, or claim calibration that has not been observed.
+    Respond with exactly one of move_to, observe, done, give_up. Model-reported done still requires visual evidence.
+  reactive_reminder: >-
+    Respond with exactly one tool call: move_to, observe, done, or give_up.
+  scene_changed: >-
+    Scene or operator guidance changed while deciding. This proposed action was not executed.
+    Re-localize task-relevant objects and reassess action preconditions from the new observation;
+    previous target coordinates and assumptions may be stale.
   goal: >-
     Goal: {goal}
   operator_feedback: >-

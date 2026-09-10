@@ -1,0 +1,17 @@
+# Move the bowl while a release action is pending, once per trial.
+cases:
+  - id: bowl_moves_forward_before_release
+    goal: Pick up the airpod and place it inside the green bowl.
+    scene: airpod_bowl
+    verifier: case_in_green_bowl
+    seed: 24
+    split: train
+    disturbances: [[before_release, 0.08, 0.0]]
+  - id: bowl_moves_sideways_before_release
+    goal: Pick up the airpod and place it inside the green bowl.
+    scene: airpod_bowl
+    verifier: case_in_green_bowl
+    seed: 124
+    split: validation
+    jitter_m: 0.005
+    disturbances: [[before_release, 0.0, 0.08]]

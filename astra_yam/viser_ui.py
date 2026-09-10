@@ -211,6 +211,7 @@ class ViserVisualizer:
         # Set by whoever owns the motion (cmd_run wires TrialRunner.request_estop, the manual bench its
         # gateway's event) so the EMERGENCY STOP button can halt a motion that is already streaming.
         self.on_estop: Optional[Callable[[], None]] = None
+        self.on_reobserve: Optional[Callable[[], None]] = None
         self._last_update = 0.0
         self._last_q: Optional[np.ndarray] = None
         self._pending_q: Optional[np.ndarray] = None   # pose dropped by rate limiting, flushed before renders
@@ -322,7 +323,7 @@ class ViserVisualizer:
             return
         import trimesh
 
-        from astra_yam.sim import SimCase
+        from astra_yam.sim import SimBowl, SimCase
 
         sc = self.server.scene
         self._case_lids: Dict[str, object] = getattr(self, "_case_lids", {})
@@ -346,7 +347,13 @@ class ViserVisualizer:
             if obj.shape == "box":
                 h = sc.add_box(node, color=obj.color_rgb, dimensions=obj.size, position=obj.pos)
             else:
-                mesh = trimesh.creation.cylinder(radius=obj.size[0], height=obj.size[1], sections=48)
+                if isinstance(obj, SimBowl):
+                    ring = trimesh.creation.annulus(r_min=obj.inner_radius, r_max=obj.size[0], height=obj.height, sections=48)
+                    bottom = trimesh.creation.cylinder(radius=obj.inner_radius, height=obj.floor_thickness, sections=48)
+                    bottom.apply_translation([0, 0, -obj.height / 2 + obj.floor_thickness / 2])
+                    mesh = trimesh.util.concatenate([ring, bottom])
+                else:
+                    mesh = trimesh.creation.cylinder(radius=obj.size[0], height=obj.size[1], sections=48)
                 mesh.visual.face_colors = (*obj.color_rgb, 255)
                 h = sc.add_mesh_trimesh(node, mesh, position=obj.pos)
             self._label_specs[node + "_label"] = (obj.name, lambda o=obj: o.pos + np.array([0, 0, o.height / 2 + 0.03]))
@@ -370,6 +377,8 @@ class ViserVisualizer:
                 def _moved(event, _name=name):
                     self.world.set_object_position(_name, np.asarray(event.target.position))
                     self.update_objects()
+                    if self.cfg.reactive.enabled:
+                        self._on_reobserve()
 
                 g.on_update(_moved)
                 self._gizmos[name] = g
@@ -654,6 +663,8 @@ class ViserVisualizer:
                                                   "position, and ends the session")
             self._stop_btn = gui.add_button("Stop after this motion", color="orange",
                                             hint="Lets the current motion finish, then ends the session; the arms hold")
+            self._reobserve_btn = gui.add_button("Scene moved — reobserve", visible=self.cfg.reactive.enabled,
+                                                hint="Pause the current motion, keep the grasp, and obtain a fresh observation")
             self._fb_text = gui.add_text("Feedback to Astra", "", hint="Sent before the next Astra call")
             self._send_btn = gui.add_button("Send feedback")
             self._edit_cb = gui.add_checkbox("Edit objects (drag gizmos)", False, visible=self.world is not None)
@@ -674,6 +685,7 @@ class ViserVisualizer:
         self._start_btn.on_click(lambda _e: self._on_start())
         self._estop_btn.on_click(lambda _e: self._on_estop())
         self._stop_btn.on_click(lambda _e: self._on_stop())
+        self._reobserve_btn.on_click(lambda _e: self._on_reobserve())
         self._send_btn.on_click(lambda _e: self._on_send())
         self._edit_cb.on_update(lambda _e: self._set_edit_objects(self._edit_cb.value))
         self._reset_btn.on_click(lambda _e: self._on_reset_objects())
@@ -698,6 +710,13 @@ class ViserVisualizer:
     def _on_stop(self) -> None:
         self._op_queue.put("/stop")
         self.set_status(phase="stop requested (after this motion)")
+
+    def _on_reobserve(self) -> None:
+        if self.on_reobserve is not None:
+            self.on_reobserve()
+        else:
+            self._op_queue.put("/reobserve")
+        self.set_status(phase="scene changed; reobservation requested")
 
     def _on_estop(self) -> None:
         """Emergency stop: halt the motion now, then end the session.

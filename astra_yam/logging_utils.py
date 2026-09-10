@@ -32,7 +32,7 @@ class _Encoder(json.JSONEncoder):
 
 class TrialLogger:
     def __init__(self, root: str, goal: str, name: Optional[str] = None):
-        stamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+        stamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         self.dir = Path(root) / (name or f"{stamp}_{slugify(goal)}")
         self.dir.mkdir(parents=True, exist_ok=False)
         (self.dir / "frames").mkdir()
@@ -97,10 +97,11 @@ class TrialLogger:
         pad = " " * len(prefix)
         return "\n".join((prefix if i == 0 else pad) + line for i, line in enumerate(lines))
 
-    def save_frames(self, step: int, frames: Dict[str, bytes]) -> Dict[str, str]:
+    def save_frames(self, step: int, frames: Dict[str, bytes], sequence: Optional[int] = None) -> Dict[str, str]:
         paths = {}
         for cam, jpeg in frames.items():
-            p = self.dir / "frames" / f"step_{int(step):05d}_{cam}.jpg"
+            suffix = f"_obs_{sequence:05d}" if sequence is not None else ""
+            p = self.dir / "frames" / f"step_{int(step):05d}{suffix}_{cam}.jpg"
             p.write_bytes(jpeg)
             paths[cam] = str(p.relative_to(self.dir))
         return paths

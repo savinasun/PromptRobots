@@ -178,6 +178,9 @@ class OpenAIAstraClient:
     def build_request_dict(self, input_items: List[dict]) -> dict:
         return self._request_kwargs(input_items)
 
+    def close(self) -> None:
+        self._client.close()
+
     def create(self, input_items: List[dict]) -> AstraResponse:
         t0 = time.perf_counter()
         try:

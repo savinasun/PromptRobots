@@ -1,4 +1,6 @@
 """The model-facing text lives in configs/, not in the code."""
+import json
+
 import pytest
 import yaml
 from conftest import ROOT
@@ -43,6 +45,8 @@ def test_every_prompt_string_is_used_somewhere():
         "tools.done.description", "tools.give_up.description", "tools.hindsight",
         "observation.text", "observation.camera_label", "observation.image_omitted",
         "session.goal", "session.operator_feedback", "session.tool_call_reminder",
+        "tools.observe", "tools.lesson", "session.scene_changed", "session.reactive_context",
+        "session.reactive_rules", "session.reactive_reminder", "session.policy_notes",
     }
 
     def keys(node, prefix=""):
@@ -73,3 +77,48 @@ def test_text_comes_from_the_file_not_the_code(tmp_path):
     item = build_observation_item("g", q14, eef, 7, 3, {"top_cam": b"\xff\xd8x"}, "high", str(edited))
     assert item["content"][1] == {"type": "input_text", "text": "IMG top_cam 3"}
     assert build_tools(Bounds())[1]["description"] != "STOP HERE"      # the real file is untouched
+
+
+@pytest.mark.parametrize("reactive", [False, True])
+@pytest.mark.parametrize("with_notes", [False, True])
+def test_inspected_prompt_matches_actual_runner_request(tmp_path, capsys, reactive, with_notes):
+    from astra_yam.cli import build_parser, cmd_show_prompt
+    from test_session_sim import _make
+
+    notes = tmp_path / "notes.md"
+    notes.write_text("User-selected optional strategy: inspect the handle.")
+    flags = ["--dynamic-scene"] if reactive else []
+    overrides = {"reactive.enabled": reactive, "limits.max_llm_calls": 7}
+    if with_notes:
+        flags += ["--policy-notes", str(notes)]
+        overrides["policy_notes_path"] = str(notes)
+    args = build_parser().parse_args(["show-prompt", "--sim", "--bundle-json", "--max-calls", "7", *flags])
+    assert cmd_show_prompt(args) == 0
+    bundle = json.loads(capsys.readouterr().out)
+    _, runner, _, astra = _make(tmp_path, script=[{
+        "name": "give_up", "arguments": {"reason": "inspection test", "hindsight": "none"}}], **overrides)
+    # The fixture normally installs only the legacy tool set on its mock client.
+    astra.tools = runner.tools
+    outcome = runner.run("Inspect the handle.")
+    from pathlib import Path
+    request = json.loads((Path(outcome.log_dir) / "requests/request_0000.json").read_text())
+    assert bundle["system_prompt"] == request["input"][0]["content"]
+    assert bundle["tools"] == request["tools"]
+    assert ("User-selected optional strategy" in bundle["system_prompt"]) == with_notes
+
+
+def test_task_and_scene_do_not_select_policy_advice():
+    from astra_yam.cli import _config_from_args, build_parser
+    from astra_yam.embodiment import build_policy_prompt
+
+    bundles = []
+    for scene, goal in [("airpod_bowl", "Place the charging case in the green bowl."),
+                        ("blocks", "Stack the blue block on the green block."),
+                        ("kitchen", "Move the cup next to the plate.")]:
+        cfg = _config_from_args(build_parser().parse_args([
+            "run", "--sim", "--dynamic-scene", "--scene", scene, "--goal", goal]))
+        assert cfg.policy_notes_path is None
+        bundles.append((build_policy_prompt(cfg), build_tools(cfg.bounds, cfg.prompts_path, reactive=True)))
+    assert bundles[0] == bundles[1] == bundles[2]
+    for word in ("airpod", "bowl", "lid", "cup", "plate", "block"):
+        assert word not in json.dumps(bundles[0]).lower().split()

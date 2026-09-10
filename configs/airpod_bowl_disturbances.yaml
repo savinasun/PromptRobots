@@ -1,0 +1,16 @@
+cases:
+  - id: bowl_moves_during_approach
+    goal: Pick up the airpod and place it inside the green bowl.
+    scene: airpod_bowl
+    verifier: case_in_green_bowl
+    seed: 12
+    split: train
+    disturbances: [[5, 0.06, 0.04]]
+  - id: bowl_moves_twice
+    goal: Pick up the airpod and place it inside the green bowl.
+    scene: airpod_bowl
+    verifier: case_in_green_bowl
+    seed: 102
+    split: validation
+    jitter_m: 0.005
+    disturbances: [[5, -0.04, 0.04], [12, 0.04, -0.08]]

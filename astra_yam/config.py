@@ -221,6 +221,15 @@ class SimConfig:
 
 
 @dataclass
+class ReactiveConfig:
+    enabled: bool = False
+    max_motion_seconds: float = 3.0  # executed trajectory time between observations
+    camera_name: str = "top_cam"    # fixed camera for pre-execution scene-change checks
+    change_fraction: float = 0.01   # fraction of blurred pixels with a material color change
+    pixel_difference: float = 25.0  # 8-bit color difference, after downsampling
+
+
+@dataclass
 class PipelineConfig:
     embodiment_name: str = "yam_arms"
     bounds: Bounds = field(default_factory=Bounds)
@@ -237,6 +246,8 @@ class PipelineConfig:
     prompts_path: str = DEFAULT_PROMPTS       # tool descriptions, observation and session messages
     home_on_end: bool = False
     operator_feedback_file: Optional[str] = None
+    policy_notes_path: Optional[str] = None  # versioned, task-specific advice appended to the fixed system prompt
+    reactive: ReactiveConfig = field(default_factory=ReactiveConfig)
 
 
 # ---------------------------------------------------------------------------

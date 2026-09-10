@@ -17,7 +17,7 @@ import numpy as np
 from astra_yam.astra_client import AstraClient
 from astra_yam.cameras import CameraSource
 from astra_yam.config import ARMS, NUM_DOFS, PipelineConfig, to_dict
-from astra_yam.embodiment import ARM_SLICES, build_system_prompt, build_tools
+from astra_yam.embodiment import ARM_SLICES, build_policy_prompt, build_tools
 from astra_yam.gateway import SafetyGateway, move_joint_space
 from astra_yam.kinematics import ArmKinematics
 from astra_yam.logging_utils import TrialLogger
@@ -102,6 +102,8 @@ class TrialOutcome:
     log_dir: Optional[str] = None
     rejections: int = 0
     error: Optional[str] = None
+    stale_actions: int = 0
+    observation_pauses: int = 0
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -200,6 +202,7 @@ class TrialRunner:
         # Emergency stop, shared with the gateway once a trial starts: set it from any thread (the viser
         # E-STOP button) to halt a motion in flight and end the session.
         self.estop = threading.Event()
+        self.reobserve = threading.Event()
         self.cfg = cfg
         self.robot = robot
         self.cameras = cameras
@@ -211,15 +214,17 @@ class TrialRunner:
         self.sim_world = sim_world
         self.log_root = log_root or cfg.log_dir
         self.verbose = verbose
-        self.tools = build_tools(cfg.bounds, cfg.prompts_path)
-        announced_budget = cfg.limits.prompt_llm_calls or cfg.limits.max_llm_calls
-        self.system_prompt = build_system_prompt(cfg.system_prompt_path, announced_budget, cfg.embodiment_name, cfg.bounds,
-                                           cfg.tilt_note_path)
+        self.tools = build_tools(cfg.bounds, cfg.prompts_path, reactive=cfg.reactive.enabled)
+        self.system_prompt = build_policy_prompt(cfg)
 
     # ------------------------------------------------------------------ utils
     def request_estop(self) -> None:
         """Halt the current motion and end the session. Safe to call from another thread."""
         self.estop.set()
+
+    def request_reobserve(self) -> None:
+        """UI/perception event: pause an in-flight move, invalidate the pending decision."""
+        self.reobserve.set()
 
     def _prompt(self, key: str, **fmt) -> str:
         return prompt(key, self.cfg.prompts_path, **fmt)
@@ -276,7 +281,9 @@ class TrialRunner:
     def _observe(self, gateway: SafetyGateway, goal: str, remaining: int, step: int, logger: TrialLogger) -> dict:
         q, poses, eef = gateway.read_state()
         frames = self.cameras.read_jpeg_frames()
-        paths = logger.save_frames(step, frames)
+        self._last_frames = frames
+        self._observation_sequence += 1
+        paths = logger.save_frames(step, frames, sequence=self._observation_sequence if self.cfg.reactive.enabled else None)
         payload = {"step": step, "joint_pos": q.tolist(), "eef": eef, "frames": paths}
         if self.sim_world is not None:
             payload["sim_world"] = self.sim_world.status()
@@ -284,6 +291,10 @@ class TrialRunner:
         self._hook("on_observation", step, q, eef, frames, remaining)
         item = build_observation_item(goal, q, eef, remaining, step, frames, self.cfg.cameras.detail,
                                       self.cfg.prompts_path)
+        if self.cfg.reactive.enabled:
+            item["content"][0]["text"] += "\n" + self._prompt(
+                "session.reactive_context", sequence=self._observation_sequence,
+                elapsed=logger.elapsed, lessons=json.dumps(self._episode_memory.lessons))
         text = "\n".join(p["text"] for p in item["content"] if p.get("type") == "input_text")
         logger.text_section(f"OBSERVATION step {step}", text)
         if paths:
@@ -307,6 +318,12 @@ class TrialRunner:
         deadline = t_start + lim.max_trial_seconds
         outcome = TrialOutcome(status="error", goal=goal, log_dir=str(logger.dir))
         usage_total: Dict[str, int] = {}
+        from astra_yam.reactive import EpisodeMemory
+        self._episode_memory = EpisodeMemory()
+        self._observation_sequence = -1
+        self._last_frames = {}
+        llm_calls = executed = total_rejections = 0
+        chunks: List[_Chunk] = []
         gateway: Optional[SafetyGateway] = None
         try:
             if cfg.robot.home_at_start:
@@ -317,6 +334,8 @@ class TrialRunner:
             gateway = SafetyGateway(cfg, self.kin, self.robot, start_rot, realtime=self.realtime)
             gateway.on_plan = lambda plan: self._hook("on_plan", plan)
             gateway.estop = self.estop
+            if cfg.reactive.enabled:
+                gateway.reobserve = self.reobserve
             logger.event("trial_start", joint_pos=q0.tolist(), start_rot={a: start_rot[a].tolist() for a in ARMS})
             self._hook("on_trial_start", goal, q0)
 
@@ -324,6 +343,7 @@ class TrialRunner:
             executed = 0
             llm_calls = 0
             rejections = 0
+            total_rejections = 0
             chunks: List[_Chunk] = []
             spent = {"astra": 0.0, "motion": 0.0, "observation": 0.0}   # wall clock per phase, for the transcript
             input_items: List[dict] = [
@@ -354,6 +374,10 @@ class TrialRunner:
                         if line.strip().lower() in STOP_COMMANDS:
                             status, outcome.reason = "operator_stop", "operator requested stop"
                             break
+                        if cfg.reactive.enabled and line.strip().lower() in ("/reobserve", "/scene_changed"):
+                            self.reobserve.set()
+                            logger.event("scene_change_notification", source="operator")
+                            continue
                         logger.event("operator_feedback", text=line)
                         logger.note(f"OPERATOR: {line}")
                         logger.text_section("OPERATOR FEEDBACK", line)
@@ -361,6 +385,10 @@ class TrialRunner:
                                             "content": self._prompt("session.operator_feedback", feedback=line)})
                     if status is not None:
                         break
+
+                if cfg.reactive.enabled and self.reobserve.is_set():
+                    self.reobserve.clear()
+                    input_items.append(self._observe(gateway, goal, remaining, executed, logger))
 
                 request_items = prune_image_history(input_items, cfg.astra.image_history, cfg.prompts_path)
                 n_items, n_images = summarize_items(request_items)
@@ -399,13 +427,50 @@ class TrialRunner:
                 self._hook("on_astra_response", resp)
                 input_items.extend(resp.output_items)
 
+                # Guidance and scene changes arriving during inference invalidate
+                # this response before ANY tool (including release/done) executes.
+                feedback_changed = False
+                if self.operator is not None:
+                    for line in self.operator.poll():
+                        if line.strip().lower() in STOP_COMMANDS:
+                            status, outcome.reason = "operator_stop", "operator requested stop"
+                            break
+                        feedback_changed = True
+                        if cfg.reactive.enabled and line.strip().lower() in ("/reobserve", "/scene_changed"):
+                            self.reobserve.set()
+                            logger.event("scene_change_notification", source="operator")
+                        else:
+                            logger.event("operator_feedback", text=line)
+                            input_items.append({"role": "user", "content": self._prompt(
+                                "session.operator_feedback", feedback=line)})
+                if status is not None or time.perf_counter() > deadline:
+                    if status is None:
+                        status, outcome.reason = "timeout", "trial time limit reached during model inference"
+                    for call in resp.function_calls:
+                        input_items.append(_function_call_output(call.call_id, {"ok": False, "status": status}))
+                    break
+                if cfg.reactive.enabled:
+                    from astra_yam.reactive import changed_fraction
+                    fraction = changed_fraction(self._last_frames, self.cameras.read_jpeg_frames(), cfg.reactive)
+                    if fraction >= cfg.reactive.change_fraction or self.reobserve.is_set() or feedback_changed:
+                        self.reobserve.clear()
+                        outcome.stale_actions += 1
+                        for call in resp.function_calls:
+                            payload = {"ok": False, "status": "stale_observation", "reason": self._prompt("session.scene_changed")}
+                            input_items.append(_function_call_output(call.call_id, payload))
+                            logger.event("tool_call", name=call.name, arguments=call.arguments, result=payload)
+                        logger.event("stale_decision", changed_fraction=fraction, feedback_changed=feedback_changed)
+                        input_items.append(self._observe(gateway, goal, remaining, executed, logger))
+                        continue
+
                 if not resp.function_calls:
                     text = " ".join(resp.messages)[:400]
                     logger.event("no_tool_call", text=text)
                     logger.note(f"(no tool call) {text}")
                     logger.text_block("[no tool call] a reminder was sent instead")
                     input_items.append({"role": "user",
-                                        "content": self._prompt("session.tool_call_reminder")})
+                                        "content": self._prompt("session.reactive_reminder" if cfg.reactive.enabled
+                                                                else "session.tool_call_reminder")})
                     continue
 
                 fc = resp.function_calls[0]
@@ -417,6 +482,7 @@ class TrialRunner:
                     payload = {"ok": False, "status": "rejected", "reason": f"arguments were not valid JSON: {fc.parse_error}"}
                     input_items.append(_function_call_output(fc.call_id, payload))
                     rejections += 1
+                    total_rejections += 1
                     logger.event("tool_call", name=fc.name, arguments=fc.raw_arguments, result=payload)
                 elif fc.name == "move_to":
                     args = fc.arguments or {}
@@ -464,8 +530,14 @@ class TrialRunner:
                         remaining -= payload["steps"]
                         executed += payload["steps"]
                         rejections = 0
+                        if cfg.reactive.enabled:
+                            self._episode_memory.add(args.get("lesson"))
+                        if payload["status"] == "observation_required":
+                            outcome.observation_pauses += 1
+                            self.reobserve.clear()
                     elif payload["status"] == "rejected":
                         rejections += 1
+                        total_rejections += 1
                         logger.note(f"  REJECTED: {payload['reason']}")
                         if lim.strict_gateway:
                             status, outcome.reason = "rejected_packet", payload["reason"]
@@ -476,6 +548,12 @@ class TrialRunner:
                         remaining -= payload["steps"]
                         executed += payload["steps"]
                         status, outcome.reason = payload["status"], payload.get("reason")
+                elif fc.name == "observe" and cfg.reactive.enabled:
+                    gateway.hold()
+                    self._episode_memory.add((fc.arguments or {}).get("lesson"))
+                    input_items.append(_function_call_output(fc.call_id, {"ok": True, "status": "observed", "steps": 0}))
+                    logger.event("tool_call", name="observe", arguments=fc.arguments, result={"ok": True, "status": "observed"})
+                    rejections = 0
                 elif fc.name in ("done", "give_up"):
                     args = fc.arguments or {}
                     status = fc.name
@@ -495,9 +573,15 @@ class TrialRunner:
                     payload = {"ok": False, "status": "rejected", "reason": f"unknown tool '{fc.name}'"}
                     input_items.append(_function_call_output(fc.call_id, payload))
                     rejections += 1
+                    total_rejections += 1
                     logger.event("tool_call", name=fc.name, arguments=fc.arguments, result=payload)
                     logger.text_block(logger.indent(json.dumps(payload), "[rejected]  "))
 
+                if status is None and rejections:
+                    if lim.strict_gateway:
+                        status, outcome.reason = "rejected_packet", payload["reason"]
+                    elif rejections >= lim.max_consecutive_rejections:
+                        status, outcome.reason = "too_many_rejections", f"{rejections} consecutive rejected packets"
                 if status is None:
                     t_obs = time.perf_counter()
                     input_items.append(self._observe(gateway, goal, remaining, executed, logger))
@@ -508,7 +592,7 @@ class TrialRunner:
             outcome.waypoints = executed
             outcome.waypoints_predicted = sum(c.predicted for c in chunks)
             outcome.chunk_sizes = [c.executed for c in chunks]
-            outcome.rejections = rejections
+            outcome.rejections = total_rejections
             logger.text_section("ACTION CHUNKS", _chunk_table(chunks, cfg.motion.cadence_hz))
             logger.text_section("TIME", _time_table(spent, time.perf_counter() - t_start, llm_calls, chunks,
                                                     cfg.motion))
@@ -518,10 +602,15 @@ class TrialRunner:
             logger.event("exception", error=outcome.error)
             self._say(f"[trial] ERROR: {outcome.error}")
         finally:
+            outcome.llm_calls = llm_calls
+            outcome.waypoints = executed
+            outcome.rejections = total_rejections
+            outcome.waypoints_predicted = sum(c.predicted for c in chunks)
+            outcome.chunk_sizes = [c.executed for c in chunks]
             try:
                 if gateway is not None:
                     gateway.hold()
-                    if cfg.home_on_end and outcome.status not in ("aborted", "error"):
+                    if cfg.home_on_end and not self.estop.is_set() and outcome.status in ("done", "give_up"):
                         self._say("[trial] returning to the home pose")
                         move_joint_space(self.robot, self.home_joints(), cfg.motion.homing_seconds,
                                          cfg.motion.control_hz, realtime=self.realtime)

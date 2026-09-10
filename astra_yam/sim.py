@@ -161,6 +161,22 @@ class SimObject:
                 "size": list(self.size)}
 
 
+class SimBowl(SimObject):
+    """Simple open container; supports fully contained objects on its interior floor."""
+    def __init__(self, name, pos, radius=0.08, height=0.06, color_bgr=(65, 165, 65)):
+        super().__init__(name, pos, (radius, height), color_bgr, "cylinder")
+        self.inner_radius = radius - 0.006
+        self.floor_thickness = 0.006
+
+    def contains_xy(self, obj):
+        radius = float(np.hypot(obj.size[0], obj.size[1]) / 2) if obj.shape == "box" else obj.size[0]
+        return bool(np.linalg.norm(obj.pos[:2] - self.pos[:2]) + radius < self.inner_radius)
+
+    @property
+    def floor_z(self):
+        return float(self.pos[2] - self.height / 2 + self.floor_thickness)
+
+
 class SimCan(SimObject):
     """Open-top can of powder. Tilting it past POUR_START_RAD lets powder out; what leaves the can lands in the
     target bowl if the opening is above the bowl's footprint, otherwise it is spilled. The amount poured is a
@@ -314,7 +330,13 @@ def _chili(table_z: float) -> List[SimObject]:
     ]
 
 
+def _airpod_bowl(table_z: float) -> List[SimObject]:
+    return [SimCase("airpods case", [0.33, 0.02, table_z + SimCase.H / 2]),
+            SimBowl("green bowl", [0.36, -0.18, table_z + 0.03])]
+
+
 SCENES: Dict[str, Callable[[float], List[SimObject]]] = {"blocks": _blocks, "kitchen": _kitchen, "airpods": _airpods,
+                                                          "airpod_bowl": _airpod_bowl,
                                                           "chili": _chili, "empty": lambda z: []}
 
 
@@ -440,6 +462,9 @@ class SimWorld:
                 for arm in ARMS:
                     gp = self.grasp_points[arm]
                     key = (arm, obj.name)
+                    if (isinstance(obj, SimBowl) and gp[2] >= obj.floor_z
+                            and np.linalg.norm(gp[:2] - obj.pos[:2]) + openings[arm] / 2 + JAW_HALF_THICKNESS_M < obj.inner_radius):
+                        continue  # open interior: fingers within the rim do not push a solid cylinder
                     if not self._z_overlap(gp, obj):
                         self._contacts.discard(key)
                         self._straddled.discard(key)
@@ -511,7 +536,8 @@ class SimWorld:
             if other is obj or other.held_by is not None:
                 continue
             if np.linalg.norm(other.pos[:2] - obj.pos[:2]) < other.footprint_radius + obj.footprint_radius * 0.5:
-                z = max(z, other.pos[2] + other.height / 2)
+                support = other.floor_z if isinstance(other, SimBowl) and other.contains_xy(obj) else other.pos[2] + other.height / 2
+                z = max(z, support)
         return z
 
     def _settle(self, obj: SimObject) -> None:
@@ -590,9 +616,30 @@ class SimCameraSource:
 
     def _draw_object(self, img, obj: SimObject, center, px_per_m: float) -> None:
         c, r = center
+        if isinstance(obj, SimCase):
+            # Project the same articulated geometry used by viser. Previously an
+            # open and a closed case produced identical policy camera images.
+            from itertools import product
+
+            corners = np.array(list(product((-0.5, 0.5), repeat=3)))
+            body_dims = (obj.H, obj.W, obj.D - obj.LID) if obj.hanging else (obj.D - obj.LID, obj.W, obj.H)
+            body = corners * body_dims + obj.body_center()
+            angle = (-1 if obj.hanging else 1) * obj.lid_angle
+            co, si = np.cos(angle), np.sin(angle)
+            rotation = np.array([[co, 0, si], [0, 1, 0], [-si, 0, co]])
+            lid = (corners * obj.lid_dims() + obj.lid_center() - obj.hinge()) @ rotation.T + obj.hinge()
+            for vertices, color in ((body, obj.color), (lid, (210, 210, 210))):
+                delta = vertices - obj.pos
+                pixels = np.column_stack((c - delta[:, 1] * px_per_m, r - delta[:, 0] * px_per_m))
+                polygon = cv2.convexHull(np.round(pixels).astype(np.int32))
+                cv2.fillConvexPoly(img, polygon, color)
+                cv2.polylines(img, [polygon], True, (80, 80, 80), 1)
+            return
         if obj.shape == "cylinder":
             rad = max(3, int(obj.size[0] * px_per_m))
             cv2.circle(img, (c, r), rad, obj.color, -1)
+            if isinstance(obj, SimBowl):
+                cv2.circle(img, (c, r), max(2, int(obj.inner_radius * px_per_m)), (95, 200, 95), -1)
         else:
             sx, sy = max(4, int(obj.size[0] * px_per_m)), max(4, int(obj.size[1] * px_per_m))
             cv2.rectangle(img, (c - sy // 2, r - sx // 2), (c + sy // 2, r + sx // 2), obj.color, -1)
@@ -606,7 +653,7 @@ class SimCameraSource:
             c, r = self._top_px(base)
             cv2.rectangle(img, (c - 12, r - 6), (c + 12, r + 6), (90, 90, 90), -1)
             cv2.putText(img, f"{arm} base", (c - 30, r + 22), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (60, 60, 60), 1)
-        for obj in self.world.objects.values():
+        for obj in sorted(self.world.objects.values(), key=lambda o: (not isinstance(o, SimBowl), o.pos[2])):
             c, r = self._top_px(obj.pos)
             self._draw_object(img, obj, (c, r), px_per_m)
             s = int(obj.footprint_radius * px_per_m)
@@ -628,7 +675,7 @@ class SimCameraSource:
         scale = 0.12 / height * 600  # px per meter, grows as the gripper approaches the table
         cx, cy = self.W // 2, self.H // 2
         cv2.putText(img, f"{arm}_cam (sim schematic, looking down)", (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (40, 40, 40), 1)
-        for obj in self.world.objects.values():
+        for obj in sorted(self.world.objects.values(), key=lambda o: (not isinstance(o, SimBowl), o.pos[2])):
             d = obj.pos - gp
             col = int(cx - d[1] * scale)  # +y (left) -> image left
             row = int(cy - d[0] * scale)  # +x (forward) -> image up

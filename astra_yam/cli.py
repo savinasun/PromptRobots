@@ -22,7 +22,7 @@ import numpy as np
 
 from astra_yam import __version__
 from astra_yam.config import ARMS, PipelineConfig, dump_config, load_config
-from astra_yam.embodiment import ARM_SLICES, build_system_prompt, build_tools, eef_state_dict, arm_poses, format_eef_state
+from astra_yam.embodiment import ARM_SLICES, build_policy_prompt, build_tools, eef_state_dict, arm_poses, format_eef_state
 from astra_yam.kinematics import ArmKinematics
 
 
@@ -46,13 +46,16 @@ def build_parser() -> argparse.ArgumentParser:
 
     def common(sp):
         sp.add_argument("--config", help="YAML config (see configs/)")
+        sp.add_argument("--policy-notes", help="optional strategy file; no task advice is loaded by default")
+        sp.add_argument("--task-profile", choices=["airpod-bowl"], help="optional legacy task preset: adds charging-case advice and dynamic-scene handling")
+        sp.add_argument("--dynamic-scene", action="store_true", help="recheck the scene before actions and observe between short moves")
         sp.add_argument("--set", action="append", metavar="KEY=VALUE", help="dotted override, e.g. motion.linear_speed_mps=0.02")
         sp.add_argument("--robot", choices=["zmq", "sim"], help="robot backend")
         sp.add_argument("--cameras", choices=["realsense", "sim", "none"], help="camera backend")
         sp.add_argument("--host"), sp.add_argument("--port", type=int)
         sp.add_argument("--sim", action="store_true", help="shortcut for --robot sim --cameras sim")
         sp.add_argument("--log-dir", help="where trial folders (and check frames) are written")
-        sp.add_argument("--scene", choices=["blocks", "kitchen", "airpods", "chili", "empty"], help="simulator object preset")
+        sp.add_argument("--scene", choices=["blocks", "kitchen", "airpods", "airpod_bowl", "chili", "empty"], help="simulator object preset")
         sp.add_argument("--viser", action="store_true", help="3D visualization + operator UI in the browser")
         sp.add_argument("--viser-port", type=int, help="viser port (default 8080)")
         sp.add_argument("--viser-host", help="viser bind host (default 0.0.0.0)")
@@ -103,7 +106,29 @@ def build_parser() -> argparse.ArgumentParser:
 
     sp = sub.add_parser("show-prompt", help="print the system prompt and the tool schemas")
     common(sp)
-    sp.add_argument("--json", action="store_true", help="print the tools as JSON only")
+    fmt = sp.add_mutually_exclusive_group()
+    fmt.add_argument("--json", action="store_true", help="print the tools as JSON only")
+    fmt.add_argument("--bundle-json", action="store_true", help="print the exact assembled system prompt and tools as JSON")
+    sp.add_argument("--max-calls", type=int)
+    sp.add_argument("--prompt-budget", type=int)
+    research = sub.add_parser("research", help="repeatable simulator evaluation and Astra prompt improvement")
+    common(research)
+    research.add_argument("--suite", default=str(Path(__file__).resolve().parent.parent / "configs/airpods_research.yaml"))
+    research.add_argument("--output", required=True, help="new experiment directory (must not exist)")
+    research.add_argument("--iterations", type=int, default=2, help="candidate revisions; 0 evaluates the baseline only")
+    research.add_argument("--repeats", type=int, default=1, help="fresh rollouts per fixed case")
+    research.add_argument("--model")
+    research.add_argument("--effort", choices=["low", "medium", "high", "xhigh", "max"])
+    research.add_argument("--max-calls", type=int, default=24)
+    research.add_argument("--max-seconds", type=float, default=600)
+    research.add_argument("--max-waypoints", type=int, default=10000)
+    research.add_argument("--mock-astra", action="store_true")
+    research.add_argument("--mock-optimizer", action="store_true")
+    research.add_argument("--script", help="scripted rollout fixture")
+    research.add_argument("--research-feedback", help="text file read between iterations; /stop stops research")
+    export = sub.add_parser("export-enpire", help="export evaluated trials through ENPIRE ArtifactStore")
+    export.add_argument("--experiment", required=True)
+    export.add_argument("--output", required=True)
     return p
 
 
@@ -126,7 +151,8 @@ def _config_from_args(args) -> PipelineConfig:
         overrides["astra.script_path"] = args.script
     for attr, key in [("model", "astra.model"), ("effort", "astra.reasoning_effort"), ("max_calls", "limits.max_llm_calls"),
                       ("prompt_budget", "limits.prompt_llm_calls"),
-                      ("max_", "limits.max_"), ("max_seconds", "limits.max_trial_seconds"),
+                      ("max_waypoints", "limits.max_waypoints"), ("max_seconds", "limits.max_trial_seconds"),
+                      ("policy_notes", "policy_notes_path"),
                       ("image_history", "astra.image_history"), ("speed", "motion.linear_speed_mps"),
                       ("log_dir", "log_dir"), ("feedback_file", "operator_feedback_file")]:
         v = getattr(args, attr, None)
@@ -157,6 +183,11 @@ def _config_from_args(args) -> PipelineConfig:
         overrides["home_on_end"] = True
     if getattr(args, "strict_gateway", False):
         overrides["limits.strict_gateway"] = True
+    if getattr(args, "dynamic_scene", False) or getattr(args, "task_profile", None):
+        overrides["reactive.enabled"] = True
+    if getattr(args, "task_profile", None) == "airpod-bowl":
+        overrides.setdefault("policy_notes_path", str(Path(__file__).resolve().parent.parent / "configs/AIRPOD_BOWL.md"))
+        overrides.setdefault("reactive.change_fraction", 0.005)
     return load_config(getattr(args, "config", None), overrides)
 
 
@@ -181,7 +212,11 @@ def _make_robot_and_cameras(cfg: PipelineConfig, kin: ArmKinematics):
         raise SystemExit(f"unknown robot backend {cfg.robot.backend}")
     if cfg.cameras.backend == "sim" and sim_world is None:
         raise SystemExit("--cameras sim requires --robot sim")
-    cameras = make_camera_source(cfg.cameras, cfg.robot.gello_software_path, sim_world=sim_world)
+    try:
+        cameras = make_camera_source(cfg.cameras, cfg.robot.gello_software_path, sim_world=sim_world)
+    except BaseException:
+        robot.close()
+        raise
     return robot, cameras, sim_world
 
 
@@ -222,7 +257,7 @@ def cmd_run(args) -> int:
     print(dump_config(cfg))
     kin = ArmKinematics(cfg.robot.yam_xml_path, joint_lower=cfg.robot.joint_lower, joint_upper=cfg.robot.joint_upper,
                         limit_margin=cfg.motion.joint_limit_margin_rad)
-    tools = build_tools(cfg.bounds, cfg.prompts_path)
+    tools = build_tools(cfg.bounds, cfg.prompts_path, reactive=cfg.reactive.enabled)
     astra = make_astra_client(cfg.astra, tools)
     robot, cameras, sim_world = _make_robot_and_cameras(cfg, kin)
     operator = OperatorInput(use_stdin=sys.stdin.isatty(), file_path=cfg.operator_feedback_file)
@@ -253,6 +288,7 @@ def cmd_run(args) -> int:
                          sim_world=sim_world, hooks=viz)
     if viz is not None:
         viz.on_estop = runner.request_estop
+        viz.on_reobserve = runner.request_reobserve
     goals = [args.goal] if args.goal else _read_goals(args.goals_file)
     rc = 0
     try:
@@ -317,7 +353,7 @@ def cmd_check(args) -> int:
         key, source = find_api_key(cfg.astra.api_key_env)
         if not key:
             raise RuntimeError(f"{cfg.astra.api_key_env} not found (environment, .env, .secrets/)")
-        print(f"[ok] {cfg.astra.api_key_env} found in {source} ({key[:7]}...{key[-4:]}, {len(key)} chars)")
+        print(f"[ok] {cfg.astra.api_key_env} found in {source}")
     except Exception as e:  # noqa: BLE001
         ok = False
         print(f"[!!] {e}")
@@ -418,13 +454,16 @@ def cmd_workspace(args) -> int:
 
 def cmd_show_prompt(args) -> int:
     cfg = _config_from_args(args)
-    tools = build_tools(cfg.bounds, cfg.prompts_path)
+    tools = build_tools(cfg.bounds, cfg.prompts_path, reactive=cfg.reactive.enabled)
     if args.json:
         print(json.dumps(tools, indent=2))
         return 0
+    system_prompt = build_policy_prompt(cfg)
+    if args.bundle_json:
+        print(json.dumps({"system_prompt": system_prompt, "tools": tools}, indent=2))
+        return 0
     print("=== SYSTEM PROMPT ===")
-    print(build_system_prompt(cfg.system_prompt_path, cfg.limits.prompt_llm_calls or cfg.limits.max_llm_calls,
-                              cfg.embodiment_name, cfg.bounds, cfg.tilt_note_path))
+    print(system_prompt)
     print("\n=== TOOLS ===")
     print(json.dumps(tools, indent=2))
     return 0
@@ -433,8 +472,33 @@ def cmd_show_prompt(args) -> int:
 def main(argv: Optional[List[str]] = None) -> None:
     args = build_parser().parse_args(argv)
     rc = {"run": cmd_run, "check": cmd_check, "sim-server": cmd_sim_server, "show-prompt": cmd_show_prompt,
-          "viz": cmd_viz, "workspace": cmd_workspace}[args.cmd](args)
+          "viz": cmd_viz, "workspace": cmd_workspace, "research": cmd_research,
+          "export-enpire": cmd_export_enpire}[args.cmd](args)
     sys.exit(rc)
+
+
+def cmd_research(args) -> int:
+    from astra_yam.research import run_research
+
+    try:
+        if args.mock_astra and not args.script:
+            args.script = str(Path(__file__).resolve().parent.parent / "tasks/research/airpods_nominal.json")
+        report = run_research(_config_from_args(args), args.suite, args.output,
+                              iterations=args.iterations, repeats=args.repeats,
+                              mock_optimizer=args.mock_optimizer, feedback_file=args.research_feedback)
+    except (ValueError, RuntimeError, FileExistsError) as error:
+        print(f"[research] {error}", file=sys.stderr)
+        return 1
+    print(json.dumps({key: report[key] for key in ("status", "champion", "baseline", "best")}, indent=2))
+    print(f"Full report: {Path(args.output).resolve() / 'report.md'}")
+    return 0 if report["status"] == "complete" else 1
+
+
+def cmd_export_enpire(args) -> int:
+    from astra_yam.enpire_bridge import export_experiment
+
+    print(f"Exported {export_experiment(args.experiment, args.output)} trials")
+    return 0
 
 
 if __name__ == "__main__":

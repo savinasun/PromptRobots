@@ -112,7 +112,7 @@ def test_reasoning_summary_is_requested_and_dropped_when_rejected(monkeypatch):
 
 
 def test_chunk_counters_per_move_and_totals(tmp_path):
-    outcome, text = _run(tmp_path)
+    outcome, text = _run(tmp_path, **{"limits.max_waypoints": 3000})
     assert "[chunk]     90 waypoints predicted (90 Cartesian at 10 Hz), 90 executed (9.0 s)" in text
     assert "[counters]  move_to calls 1, waypoints 90 executed / 90 predicted, 2910 of 3000 budget left" in text
     assert "mean chunk 90.0 (min 90, max 90)" in text

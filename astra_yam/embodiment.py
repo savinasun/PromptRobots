@@ -23,6 +23,7 @@ from astra_yam.config import (
     RIGHT_GRIPPER,
     RIGHT_SLICE,
     Bounds,
+    PipelineConfig,
 )
 from astra_yam.kinematics import ArmKinematics, relative_ypr, unwrap_angle
 from astra_yam.prompts import prompt
@@ -48,13 +49,13 @@ def bounds_text(bounds: Bounds) -> str:
     return ", ".join(parts)
 
 
-def build_tools(bounds: Bounds, prompts_path: Optional[str] = None) -> List[dict]:
+def build_tools(bounds: Bounds, prompts_path: Optional[str] = None, reactive: bool = False) -> List[dict]:
     """The three tool schemas, with every description taken from `configs/PROMPTS.yaml`."""
     def text(key: str, **fmt) -> str:
         return prompt(key, prompts_path, **fmt)
 
     hindsight = text("tools.hindsight")
-    return [
+    tools = [
         {
             "type": "function",
             "name": "move_to",
@@ -101,6 +102,15 @@ def build_tools(bounds: Bounds, prompts_path: Optional[str] = None) -> List[dict
             "strict": False,
         },
     ]
+    if reactive:
+        tools[0]["parameters"]["properties"]["lesson"] = {
+            "type": "string", "description": text("tools.lesson")}
+        tools.append({"type": "function", "name": "observe", "description": text("tools.observe"),
+                      "parameters": {"type": "object", "properties": {
+                          "note": {"type": "string"},
+                          "lesson": {"type": "string", "description": text("tools.lesson")}},
+                          "required": ["note"]}, "strict": False})
+    return tools
 
 
 def tilt_note(path: Optional[str] = None) -> str:
@@ -124,6 +134,26 @@ def build_system_prompt(path: str, max_llm_calls: int, embodiment_name: str = "y
     text = text.replace("named 'yam_arms'", f"named '{embodiment_name}'")
     if bounds is not None and not (bounds.is_pinned("pitch") and bounds.is_pinned("roll")):
         text += tilt_note(tilt_note_path)
+    return text
+
+
+def build_policy_prompt(cfg: PipelineConfig) -> str:
+    """Exact system message shared by execution and prompt inspection.
+
+    Goals belong in user observations; optional policy notes are never inferred
+    from a goal, simulator scene, or evaluator's privileged state.
+    """
+    text = build_system_prompt(
+        cfg.system_prompt_path, cfg.limits.prompt_llm_calls or cfg.limits.max_llm_calls,
+        cfg.embodiment_name, cfg.bounds, cfg.tilt_note_path)
+    if cfg.policy_notes_path:
+        text += "\n\n" + prompt("session.policy_notes", cfg.prompts_path,
+                               notes=Path(cfg.policy_notes_path).read_text().strip())
+    if cfg.reactive.enabled:
+        from astra_yam.reactive import validate_reactive
+        validate_reactive(cfg.reactive)
+        text += "\n\n" + prompt("session.reactive_rules", cfg.prompts_path,
+                               seconds=cfg.reactive.max_motion_seconds)
     return text
 
 

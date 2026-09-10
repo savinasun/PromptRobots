@@ -1,0 +1,16 @@
+# Frozen environment contract. Start a NEW experiment to change these cases.
+cases:
+  - id: airpods_nominal
+    goal: Open the AirPods case lid. Keep the body supported and release the lid so it stays open.
+    scene: airpods
+    verifier: airpods_open
+    seed: 0
+    split: train
+    jitter_m: 0.0
+  - id: airpods_shifted
+    goal: Open the AirPods case lid. Keep the body supported and release the lid so it stays open.
+    scene: airpods
+    verifier: airpods_open
+    seed: 101
+    split: validation
+    jitter_m: 0.008
