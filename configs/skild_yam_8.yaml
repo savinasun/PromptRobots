@@ -58,8 +58,9 @@ cameras:
 astra:
   backend: openai
   model: gpt-6-astra
-  reasoning_effort: null          # low | medium | high | xhigh | max  (null = API default)
-  reasoning_summary: auto         # auto | concise | detailed | null; readable reasoning trace in transcript.txt
+  actions_only: true             # strict action arguments; reasoning summaries are diagnostic metadata
+  reasoning_effort: low          # Astra cannot disable reasoning; action-only requests always use low
+  reasoning_summary: auto        # print and log any API-provided reasoning summaries
   tool_choice: required
   parallel_tool_calls: false
   image_history: 4                # images kept for the newest 4..8 observations (0 = keep every image, and

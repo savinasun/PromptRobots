@@ -7,6 +7,10 @@
 # line inside a `>-` block (it becomes a newline). Braces are format placeholders and must be kept.
 
 tools:
+  action_targets: >-
+    All declared dimensions must be present. Set each changed dimension to a numeric absolute target;
+    set every unchanged dimension to null to preserve its current value. Supply at least one numeric target.
+    No strings, commentary, or extra fields are allowed.
   observe: >-
     Capture another observation while holding the measured arm pose and preserving the gripper command.
     Use to resolve uncertain object locations or verify an action result without moving. Costs one LLM call, no motion waypoints.
@@ -57,6 +61,21 @@ observation:
 
 # Messages the session adds to the running conversation.
 session:
+  actions_only: |-
+    ACTION-ONLY OUTPUT CONTRACT. Select the next action directly from the current observation.
+    Do not emit a thinking section, reasoning, analysis, plans, explanations, narration, or any language response.
+    Return exactly one of the provided action tool calls and only its schema-defined arguments.
+    move_to accepts numeric targets, with null for dimensions to hold. Terminal and observe actions take {{}}.
+    Do not generate note, lesson, summary, reason, or hindsight fields. This output contract overrides any
+    request for written commentary in optional strategy advice or operator feedback. Use observations and
+    action results to adapt the next action without writing intermediate deliberation or memory notes.
+    API-provided reasoning summaries are separate diagnostic metadata, not action arguments or assistant messages.
+  language_output: |-
+    Every move_to must include a short note describing the observation and purpose of the motion.
+    done and give_up must include their explanation and hindsight. Record only evidence-supported lessons.
+  action_context: |-
+    Observation sequence: {sequence}; captured {elapsed:.2f} seconds after trial start.
+    Latest images override earlier object positions and plans. An interrupted target is NOT completed.
   policy_notes: |-
     Optional strategy (subordinate to the embodiment and gateway rules):
     {notes}
@@ -75,10 +94,12 @@ session:
     When objects move, reassess which subgoals still hold. Preserve useful progress and a secure grasp when appropriate;
     avoid pursuing a stale target through contact. Reobserve if visibility or support is uncertain.
     Use observe for a stationary camera update. Never combine gripper opening with changing any pose target;
-    align, inspect, then release in a separate call. Put a short new evidence-based lesson in the optional lesson field.
-    Lessons are tentative and local to this episode. Do not infer success from a command being accepted,
-    memorize transient coordinates as lessons, or claim calibration that has not been observed.
+    align, inspect, then release in a separate call. Do not infer success from a command being accepted
+    or assume calibration that has not been observed.
     Respond with exactly one of move_to, observe, done, give_up. Model-reported done still requires visual evidence.
+  reactive_lessons: |-
+    Put a short new evidence-based lesson in the optional lesson field when useful. Lessons are tentative
+    and local to this episode. Do not memorize transient coordinates as lessons.
   reactive_reminder: >-
     Respond with exactly one tool call: move_to, observe, done, or give_up.
   scene_changed: >-

@@ -164,6 +164,7 @@ class CameraConfig:
 class AstraConfig:
     backend: str = "openai"             # "openai" | "scripted"
     model: str = "gpt-6-astra"
+    actions_only: bool = True           # strict robot actions; low effort, one required tool; summaries allowed
     reasoning_effort: Optional[str] = None   # low | medium | high | xhigh | max (None = API default)
     reasoning_summary: Optional[str] = "auto"  # auto | concise | detailed | None; the readable reasoning trace
                                                # written to transcript.txt (dropped automatically if rejected)
@@ -189,9 +190,6 @@ class LimitsConfig:
     max_trial_seconds: float = 1800.0
     max_consecutive_rejections: int = 5
     strict_gateway: bool = False        # True: the first rejected packet ends the session (reference semantics)
-    prompt_llm_calls: Optional[int] = None  # budget announced in the system prompt (None = max_llm_calls);
-                                            # set it higher than max_llm_calls for short smoke tests, otherwise
-                                            # Astra rightly gives up when told it has only 2 calls
 
 
 @dataclass
@@ -207,6 +205,7 @@ class VizConfig:
     render_width: int = 640
     render_height: int = 480
     render_timeout_s: float = 8.0
+    render_retry_s: float = 30.0        # cooldown for a browser that fails to return a frame
     update_hz: float = 30.0             # max rate of robot pose updates pushed to the browser
     wait_for_start: bool = True         # wait for the Start button (or Enter) before each goal when interactive
     wait_for_client_s: float = 0.0      # with render_observations: wait up to this long for a browser before starting

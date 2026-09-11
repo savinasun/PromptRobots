@@ -49,10 +49,29 @@ def bounds_text(bounds: Bounds) -> str:
     return ", ".join(parts)
 
 
-def build_tools(bounds: Bounds, prompts_path: Optional[str] = None, reactive: bool = False) -> List[dict]:
-    """The three tool schemas, with every description taken from `configs/PROMPTS.yaml`."""
+def build_tools(bounds: Bounds, prompts_path: Optional[str] = None, reactive: bool = False,
+                actions_only: bool = False) -> List[dict]:
+    """Tool schemas; strict action mode has no free-text argument fields."""
     def text(key: str, **fmt) -> str:
         return prompt(key, prompts_path, **fmt)
+
+    if actions_only:
+        targets = {
+            "type": "object", "additionalProperties": False,
+            "description": text("tools.action_targets"),
+            "properties": {name: {"type": ["number", "null"]} for name in DIM_NAMES},
+            "required": list(DIM_NAMES),
+        }
+        tools = [{"type": "function", "name": "move_to", "strict": True,
+                  "description": text("tools.move_to.description", bounds=bounds_text(bounds)),
+                  "parameters": {"type": "object", "additionalProperties": False,
+                                 "properties": {"targets": targets}, "required": ["targets"]}}]
+        for name in ["done", "give_up"] + (["observe"] if reactive else []):
+            tools.append({"type": "function", "name": name, "strict": True,
+                          "description": text("tools.observe" if name == "observe" else f"tools.{name}.description"),
+                          "parameters": {"type": "object", "additionalProperties": False,
+                                         "properties": {}, "required": []}})
+        return tools
 
     hindsight = text("tools.hindsight")
     tools = [
@@ -144,7 +163,7 @@ def build_policy_prompt(cfg: PipelineConfig) -> str:
     from a goal, simulator scene, or evaluator's privileged state.
     """
     text = build_system_prompt(
-        cfg.system_prompt_path, cfg.limits.prompt_llm_calls or cfg.limits.max_llm_calls,
+        cfg.system_prompt_path, cfg.limits.max_llm_calls,
         cfg.embodiment_name, cfg.bounds, cfg.tilt_note_path)
     if cfg.policy_notes_path:
         text += "\n\n" + prompt("session.policy_notes", cfg.prompts_path,
@@ -154,6 +173,10 @@ def build_policy_prompt(cfg: PipelineConfig) -> str:
         validate_reactive(cfg.reactive)
         text += "\n\n" + prompt("session.reactive_rules", cfg.prompts_path,
                                seconds=cfg.reactive.max_motion_seconds)
+        if not cfg.astra.actions_only:
+            text += "\n\n" + prompt("session.reactive_lessons", cfg.prompts_path)
+    text += "\n\n" + prompt("session.actions_only" if cfg.astra.actions_only else "session.language_output",
+                            cfg.prompts_path)
     return text
 
 

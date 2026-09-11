@@ -14,6 +14,7 @@ from astra_yam.sim import SimCameraSource, SimWorld, SimYamRobot
 
 def _make(tmp_path, script=None, **overrides):
     cfg = load_config(None, {"robot.backend": "sim", "cameras.backend": "sim", "astra.backend": "scripted",
+                             "astra.actions_only": False,  # historical language-mode fixture
                              "log_dir": str(tmp_path), **overrides})
     kin = ArmKinematics(limit_margin=cfg.motion.joint_limit_margin_rad)
     world = SimWorld(kin)
@@ -23,7 +24,9 @@ def _make(tmp_path, script=None, **overrides):
     robot = SimYamRobot(initial_q=q0, world=world)
     world.update(q0)
     cams = SimCameraSource(world)
-    astra = ScriptedAstraClient(script=script, tools=build_tools(cfg.bounds))
+    astra = ScriptedAstraClient(script=script, tools=build_tools(
+        cfg.bounds, cfg.prompts_path, reactive=cfg.reactive.enabled, actions_only=cfg.astra.actions_only),
+        actions_only=cfg.astra.actions_only)
     runner = TrialRunner(cfg, robot, cams, kin, astra, realtime=False, sim_world=world, verbose=False)
     return cfg, runner, world, astra
 
@@ -131,11 +134,9 @@ def test_image_history_pruning_in_requests(tmp_path):
     assert n_img == 2 * 3
 
 
-def test_prompt_budget_is_decoupled_from_hard_cap(tmp_path):
-    cfg, runner, world, astra = _make(tmp_path, **{"limits.max_llm_calls": 2, "limits.prompt_llm_calls": 100})
-    assert "budget of 100 LLM calls" in runner.system_prompt
-    cfg2, runner2, _, _ = _make(tmp_path / "b", **{"limits.max_llm_calls": 7})
-    assert "budget of 7 LLM calls" in runner2.system_prompt
+def test_max_calls_is_announced_in_system_prompt(tmp_path):
+    cfg, runner, world, astra = _make(tmp_path, **{"limits.max_llm_calls": 7})
+    assert "budget of 7 LLM calls" in runner.system_prompt
 
 
 class _RecordingHooks:

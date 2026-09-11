@@ -196,7 +196,8 @@ class TrialRunner:
         hooks=None,
     ):
         """`hooks` may define any of: on_trial_start(goal, q0), on_observation(step, q, eef, frames, remaining),
-        on_astra_call(i, max_calls, n_items, n_images), on_astra_response(resp), on_plan(plan),
+        on_astra_call(i, max_calls, n_items, n_images), on_astra_stream(kind, delta, item_id),
+        on_astra_response(resp), on_plan(plan),
         on_tool_call(name, args, payload, plan), on_end(outcome). Failures in hooks are logged, never fatal."""
         self.hooks = hooks
         # Emergency stop, shared with the gateway once a trial starts: set it from any thread (the viser
@@ -214,7 +215,8 @@ class TrialRunner:
         self.sim_world = sim_world
         self.log_root = log_root or cfg.log_dir
         self.verbose = verbose
-        self.tools = build_tools(cfg.bounds, cfg.prompts_path, reactive=cfg.reactive.enabled)
+        self.tools = build_tools(cfg.bounds, cfg.prompts_path, reactive=cfg.reactive.enabled,
+                                 actions_only=cfg.astra.actions_only)
         self.system_prompt = build_policy_prompt(cfg)
 
     # ------------------------------------------------------------------ utils
@@ -293,7 +295,8 @@ class TrialRunner:
                                       self.cfg.prompts_path)
         if self.cfg.reactive.enabled:
             item["content"][0]["text"] += "\n" + self._prompt(
-                "session.reactive_context", sequence=self._observation_sequence,
+                "session.action_context" if self.cfg.astra.actions_only else "session.reactive_context",
+                sequence=self._observation_sequence,
                 elapsed=logger.elapsed, lessons=json.dumps(self._episode_memory.lessons))
         text = "\n".join(p["text"] for p in item["content"] if p.get("type") == "input_text")
         logger.text_section(f"OBSERVATION step {step}", text)
@@ -397,7 +400,11 @@ class TrialRunner:
                 self._hook("on_astra_call", llm_calls + 1, lim.max_llm_calls, n_items, n_images)
                 t_call = time.perf_counter()
                 try:
-                    resp = self.astra.create(request_items)
+                    stream = getattr(self.astra, "create_streamed", None)
+                    if callable(stream) and callable(getattr(self.hooks, "on_astra_stream", None)):
+                        resp = stream(request_items, lambda *delta: self._hook("on_astra_stream", *delta))
+                    else:
+                        resp = self.astra.create(request_items)
                     spent["astra"] += time.perf_counter() - t_call
                 except Exception as e:  # noqa: BLE001 - SDK retries already exhausted
                     spent["astra"] += time.perf_counter() - t_call
@@ -409,6 +416,15 @@ class TrialRunner:
                 logger.log_response(llm_calls - 1, {"output": resp.output_items, "usage": resp.usage,
                                                      "response_id": resp.response_id, "elapsed_s": resp.elapsed_s,
                                                      "model": resp.model})
+                if cfg.astra.actions_only:
+                    from astra_yam.action_contract import action_output_error
+                    protocol_error = action_output_error(resp, cfg.reactive.enabled)
+                    if protocol_error:
+                        status, outcome.reason = "invalid_action_output", protocol_error
+                        total_rejections += 1
+                        logger.event("invalid_action_output", reason=protocol_error)
+                        logger.text_section("ACTION OUTPUT REJECTED", protocol_error)
+                        break
                 self._say(f"[astra] {resp.elapsed_s:.1f}s, usage {resp.usage}")
                 usage_line = ", ".join(f"{k}={v}" for k, v in (resp.usage or {}).items())
                 n_in = int((resp.usage or {}).get("input_tokens") or 0)
@@ -419,7 +435,8 @@ class TrialRunner:
                                     f"{usage_line})")
                 for trace in resp.reasoning:
                     logger.text_block(logger.indent(trace, "[reasoning] "))
-                if not resp.reasoning:
+                    self._say(f"[reasoning summary] {trace}")
+                if not resp.reasoning and not cfg.astra.actions_only:
                     n_tok = (resp.usage or {}).get("reasoning_tokens")
                     logger.text_block(f"[reasoning] (not returned as text{f'; {n_tok} reasoning tokens' if n_tok else ''})")
                 for msg in resp.messages:
@@ -487,12 +504,15 @@ class TrialRunner:
                 elif fc.name == "move_to":
                     args = fc.arguments or {}
                     targets, note = args.get("targets"), args.get("note")
-                    logger.note(f"step {executed}: move_to {json.dumps(targets)}\n  note: {note}")
-                    self._say(f"[move_to] {targets}\n[note] {note}")
+                    if cfg.astra.actions_only:
+                        targets = {name: value for name, value in targets.items() if value is not None}
+                    logger.note(f"step {executed}: move_to {json.dumps(targets)}" +
+                                (f"\n  note: {note}" if not cfg.astra.actions_only else ""))
+                    self._say(f"[move_to] {targets}" + (f"\n[note] {note}" if not cfg.astra.actions_only else ""))
                     t_move = time.perf_counter()
                     payload, plan, res = gateway.move_to(targets, remaining, deadline)
                     spent["motion"] += time.perf_counter() - t_move
-                    if note is None:
+                    if note is None and not cfg.astra.actions_only:
                         payload["warning"] = "note missing; every move must include a note"
                     input_items.append(_function_call_output(fc.call_id, payload))
                     logger.event("tool_call", name="move_to", arguments=args, result=payload,
@@ -502,8 +522,9 @@ class TrialRunner:
                                  tracking_err=res.max_tracking_err_rad if res else None)
                     self._say(f"[gateway] {payload}")
                     logger.text_block(logger.indent(json.dumps(targets), "[move_to]   "))
-                    logger.text_block(logger.indent(note or "(missing)", "[note]      "))
-                    logger.astra_note(note, f"call {llm_calls}, step {executed}")
+                    if not cfg.astra.actions_only:
+                        logger.text_block(logger.indent(note or "(missing)", "[note]      "))
+                        logger.astra_note(note, f"call {llm_calls}, step {executed}")
                     logger.text_block(logger.indent(json.dumps(payload), "[gateway]   "))
                     chunk = _Chunk(call=llm_calls, cartesian=plan.cartesian_steps if plan else 0,
                                    predicted=plan.steps if plan else 0, executed=int(payload.get("steps", 0)),
@@ -530,7 +551,7 @@ class TrialRunner:
                         remaining -= payload["steps"]
                         executed += payload["steps"]
                         rejections = 0
-                        if cfg.reactive.enabled:
+                        if cfg.reactive.enabled and not cfg.astra.actions_only:
                             self._episode_memory.add(args.get("lesson"))
                         if payload["status"] == "observation_required":
                             outcome.observation_pauses += 1
@@ -550,7 +571,8 @@ class TrialRunner:
                         status, outcome.reason = payload["status"], payload.get("reason")
                 elif fc.name == "observe" and cfg.reactive.enabled:
                     gateway.hold()
-                    self._episode_memory.add((fc.arguments or {}).get("lesson"))
+                    if not cfg.astra.actions_only:
+                        self._episode_memory.add((fc.arguments or {}).get("lesson"))
                     input_items.append(_function_call_output(fc.call_id, {"ok": True, "status": "observed", "steps": 0}))
                     logger.event("tool_call", name="observe", arguments=fc.arguments, result={"ok": True, "status": "observed"})
                     rejections = 0
@@ -562,12 +584,17 @@ class TrialRunner:
                     outcome.hindsight = args.get("hindsight")
                     input_items.append(_function_call_output(fc.call_id, {"ok": True, "status": "session_ended"}))
                     logger.event("tool_call", name=fc.name, arguments=args)
-                    logger.note(f"{fc.name.upper()}: {outcome.summary or outcome.reason}\n  hindsight: {outcome.hindsight}")
-                    self._say(f"[{fc.name}] {outcome.summary or outcome.reason}\n[hindsight] {outcome.hindsight}")
-                    logger.text_block(logger.indent(outcome.summary or outcome.reason or "", f"[{fc.name}]" .ljust(12)))
-                    logger.text_block(logger.indent(outcome.hindsight or "", "[hindsight] "))
-                    logger.astra_note(outcome.summary or outcome.reason, f"{fc.name}, call {llm_calls}")
-                    logger.astra_note_extra(outcome.hindsight, "hindsight")
+                    if cfg.astra.actions_only:
+                        logger.note(fc.name)
+                        self._say(f"[{fc.name}]")
+                        logger.text_block(f"[{fc.name}]")
+                    else:
+                        logger.note(f"{fc.name.upper()}: {outcome.summary or outcome.reason}\n  hindsight: {outcome.hindsight}")
+                        self._say(f"[{fc.name}] {outcome.summary or outcome.reason}\n[hindsight] {outcome.hindsight}")
+                        logger.text_block(logger.indent(outcome.summary or outcome.reason or "", f"[{fc.name}]" .ljust(12)))
+                        logger.text_block(logger.indent(outcome.hindsight or "", "[hindsight] "))
+                        logger.astra_note(outcome.summary or outcome.reason, f"{fc.name}, call {llm_calls}")
+                        logger.astra_note_extra(outcome.hindsight, "hindsight")
                     self._hook("on_tool_call", fc.name, args, {"ok": True, "status": "session_ended"}, None)
                 else:
                     payload = {"ok": False, "status": "rejected", "reason": f"unknown tool '{fc.name}'"}

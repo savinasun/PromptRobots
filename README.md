@@ -2,54 +2,23 @@
 
 Closed-loop runner for bimanual YAM arms.
 
+On `astra-actions-only`, robot policy output defaults to strict action calls:
+numeric `move_to` targets and empty `done`, `give_up`, or (in dynamic mode)
+`observe` arguments. Notes, lessons, and action explanations are disabled. Available API reasoning
+summaries are printed in the terminal and saved in the transcript. Astra still performs internal reasoning at `low`; it does not support
+turning reasoning off. See [action-only mode](docs/ACTIONS_ONLY.md).
+Use `--language-output` to enable action notes and justifications.
+
 - Goal + observations go to Astra
 - Astra returns one tool call (`move_to`, `done`, `give_up`)
 - Gateway validates, runs IK/safety checks, and executes motion
 
-## Shared prompts and improvement harness
+## Shared live prompts
 
-Use `--dynamic-scene` for task-independent reobservation, short actions, and
-episode-local lessons. Change tasks through `--goal` or `--goals-file`; optional
-`--policy-notes` adds explicit advice. See [the prompt guide](docs/PROMPTS.md)
-for the exact request contents, `show-prompt --bundle-json`, and a multi-task
-evaluation suite. The [moving-bowl guide](docs/AIRPOD_BOWL.md) describes live
-disturbance controls; [measured results](docs/AIRPOD_BOWL_RESULTS.md) distinguish
-the earlier task-specific experiments from the generalized prompt.
-
-The `research` command runs ENPIRE-style reset → execute → verify → record →
-refine experiments around the existing YAM runner. Each candidate changes only
-policy advice; the controller, reset, verifier, evaluation cases, and budgets stay
-fixed. A `done` call is a completion claim, not a successful evaluation.
-
-```bash
-# Offline integration check: scripted policy and optimizer, no API or hardware
-scripts/run_astra_yam.sh research --sim --mock-astra --mock-optimizer \
-  --iterations 2 --output runs/airpods-offline-001
-
-# Live Astra prompt search in simulation (six trials at most with this suite)
-scripts/run_astra_yam.sh research --sim --iterations 2 --max-calls 24 \
-  --max-seconds 240 --output runs/airpods-search-001
-
-# Inspect a strategy interactively with the existing 3D UI
-scripts/run_astra_yam.sh run --sim --scene airpods --viser \
-  --policy-notes configs/AIRPODS_STRATEGY.md \
-  --goal "Open the AirPods case lid and release the lid while supporting the body."
-```
-
-The examples above retain the earlier lid-opening suite. To evaluate one shared
-policy across stacking, lid opening, and container placement, select
-`--suite configs/multitask_research.yaml --dynamic-scene`. Use `--iterations 0`
-for six baseline episodes without optimization or imported task advice.
-
-Read `runs/airpods-search-001/report.md`, the candidate diffs, and decision JSON
-files. `best_policy.md` contains the selected additional task advice (it can be
-empty when the original prompt wins). Reuse it with `run --policy-notes PATH`.
-Use a new output directory for every experiment; previous evidence is retained.
-
-See [the research guide](docs/RESEARCH.md) for feedback, evaluation semantics,
-ENPIRE integration, experiment provenance, and real-station requirements.
-The [initial live Astra results](docs/AIRPODS_RESULTS.md) document reduced calls
-and rejections with better partial progress, but no verified lid openings.
+Use `--dynamic-scene` for reobservation and short actions when objects move.
+Change tasks through `--goal` or `--goals-file`; `--policy-notes` optionally adds
+advice from a file you supply. See [the prompt guide](docs/PROMPTS.md) for request
+contents and `show-prompt --bundle-json` for the assembled prompt and tools.
 
 ## Setup
 
@@ -81,9 +50,6 @@ chmod 600 .secrets/OPENAI_API_KEY
 # connectivity check (robot/cameras/key)
 scripts/run_astra_yam.sh check --save-frames
 
-# simulation (no hardware, scripted Astra)
-scripts/run_astra_yam.sh run --sim --mock-astra --fast-sim --yes --goal "Pick up blue and place on top of green block."
-
 # simulation with real Astra model
 scripts/run_astra_yam.sh run --sim --goal "Pick up blue and place on top of green block."
 
@@ -104,6 +70,7 @@ scripts/run_astra_yam.sh run --config configs/skild_yam_8.yaml --goals-file task
 - `--goals-file PATH`: run multiple goals (one per line, `#` comments allowed).
 - `--sim`: shorthand for `--robot sim --cameras sim`.
 - `--viser`: enable browser 3D/operator UI.
+- Viser includes live notes, recent activity, camera presets, and render-timeout recovery; see [the Viser guide](docs/VISER.md).
 - `--yes` / `-y`: skip confirmation prompts.
 
 ### Argument reference
@@ -111,8 +78,7 @@ scripts/run_astra_yam.sh run --config configs/skild_yam_8.yaml --goals-file task
 - `--model NAME`: override model from config.
 - `--effort {low|medium|high|xhigh|max}`: reasoning effort.
 - `--image-history N`: keep images for latest N observations (lower N saves tokens).
-- `--max-calls N`: hard cap on LLM calls.
-- `--prompt-budget N`: budget announced to the model (usually same as `--max-calls`).
+- `--max-calls N`: hard cap on LLM calls and the budget announced to the model.
 - `--max-seconds S`, `--max-waypoints N`: hard time/waypoint limits.
 - `--fast`: use faster motion defaults (overridden by explicit `--speed` or `--set`).
 - `--speed MPS`: set linear Cartesian speed directly.

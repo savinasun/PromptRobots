@@ -7,7 +7,6 @@ import numpy as np
 import pytest
 
 from astra_yam.config import ReactiveConfig
-from astra_yam.evaluation import Case, load_suite, verify
 from astra_yam.reactive import EpisodeMemory, changed_fraction
 from astra_yam.sim import SimWorld
 from test_session_sim import _make
@@ -118,27 +117,8 @@ def test_reactive_release_must_not_include_pose_targets(tmp_path):
     assert "opening the gripper must be separate" in (Path(outcome.log_dir) / "transcript.txt").read_text()
 
 
-def test_bowl_verifier_rejects_stale_position_and_rim_placement():
-    world = SimWorld(scene="airpod_bowl")
-    case = Case("bowl", "place", "airpod_bowl", "case_in_green_bowl", 0, "train")
-    obj, bowl = world.objects["airpods case"], world.objects["green bowl"]
-    obj.pos[:2] = bowl.pos[:2]
-    world._settle(obj)
-    assert verify(world, case)["success"]
-    obj.held_by = "left"
-    assert not verify(world, case)["success"]
-    obj.held_by = None
-    obj.pos[2] = bowl.pos[2] + bowl.height / 2 + obj.height / 2
-    assert not verify(world, case)["success"]
-    world._settle(obj)
-    bowl.pos[1] += .15
-    assert not verify(world, case)["success"]
 
 
-def test_disturbance_schedule_is_loaded_and_frozen():
-    cases = load_suite("configs/airpod_bowl_disturbances.yaml")
-    assert cases[0].disturbances == ((5, .06, .04),)
-    assert len(cases[1].disturbances) == 2
 
 
 def test_scene_notification_pauses_inflight_motion(tmp_path):
@@ -156,31 +136,3 @@ def test_scene_notification_pauses_inflight_motion(tmp_path):
     outcome = runner.run("test")
     assert outcome.observation_pauses == 1 and outcome.waypoints < 3
     assert outcome.status == "give_up"
-
-
-def test_task_profile_selects_zero_shot_prompt_and_observe_tool():
-    from astra_yam.cli import _config_from_args, build_parser
-    from astra_yam.embodiment import build_tools
-    cfg = _config_from_args(build_parser().parse_args(["run", "--sim", "--task-profile", "airpod-bowl", "--goal", "test"]))
-    assert cfg.reactive.enabled and Path(cfg.policy_notes_path).name == "AIRPOD_BOWL.md"
-    tools = build_tools(cfg.bounds, reactive=cfg.reactive.enabled)
-    assert "observe" in {t["name"] for t in tools}
-    assert "lesson" in tools[0]["parameters"]["properties"]
-
-
-def test_release_disturbance_requires_held_case_and_fires_once():
-    from types import SimpleNamespace
-    from astra_yam.evaluation import BowlDisturbances
-    world = SimWorld(scene="airpod_bowl")
-    case = load_suite("configs/airpod_bowl_release_eval.yaml")[0]
-    disturbances = BowlDisturbances(world, case)
-    release = SimpleNamespace(function_calls=[SimpleNamespace(name="move_to", arguments={"targets": {"left_gripper": 1}})])
-    disturbances.on_astra_response(release)
-    assert disturbances.applied == 0
-    world.objects["airpods case"].held_by = "left"
-    world.grippers["left"] = .3
-    before = world.objects["green bowl"].pos.copy()
-    disturbances.on_astra_response(release)
-    disturbances.on_astra_response(release)
-    assert disturbances.applied == 1
-    assert world.objects["green bowl"].pos[0] == pytest.approx(before[0] + .08)

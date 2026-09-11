@@ -97,7 +97,7 @@ def test_reasoning_summary_is_requested_and_dropped_when_rejected(monkeypatch):
     fake = FakeResponses()
     monkeypatch.setattr(openai, "OpenAI", lambda **kw: type("C", (), {"responses": fake})())
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
-    client = OpenAIAstraClient(AstraConfig(reasoning_effort="high"), tools=[])
+    client = OpenAIAstraClient(AstraConfig(reasoning_effort="high", actions_only=False), tools=[])
 
     resp = client.create([{"role": "user", "content": "hi"}])
     assert fake.kwargs[0]["reasoning"] == {"effort": "high", "summary": "auto"}

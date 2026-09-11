@@ -1,4 +1,5 @@
 import socket
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -242,3 +243,104 @@ def test_rate_limited_pose_is_flushed_before_render(viz_env, monkeypatch):
     assert viz.render_cameras(["top_cam"]) is not None
     assert np.allclose(rendered_q["q"], q1) and viz._pending_q is None
     assert abs(viz._jaws["left"][0].position[1] - 0.3 * 0.095 / 2) < 1e-9
+
+
+def test_render_timeout_cools_down_and_manual_retry_recovers(viz_env, monkeypatch):
+    cfg, kin, world, robot, viz = viz_env
+    viz.update_robot(_home(), force=True)
+    calls = []
+
+    class Client:
+        fail = True
+
+        def get_render(self, h, w, **kw):
+            calls.append(kw)
+            if self.fail:
+                raise TimeoutError("tab is frozen")
+            return np.zeros((h, w, 3), np.uint8)
+
+    client = Client()
+    monkeypatch.setattr(viz.server, "get_clients", lambda: {0: client})
+    before = [(h, h.visible) for h in viz._overlay_handles()]
+    assert viz.render_cameras() is None
+    assert all(h.visible == visible for h, visible in before)
+    assert "TimeoutError" in viz._render_md.content
+    assert viz.render_cameras() is None
+    assert len(calls) == 1                       # no repeated eight-second waits
+    assert "cooling down" in viz._render_md.content
+    client.fail = False
+    viz._retry_render()
+    assert set(viz.render_cameras()) == {"top_cam", "left_cam", "right_cam"}
+    assert "3D cameras active" in viz._render_md.content
+
+
+def test_render_fails_over_without_mixing_partial_frames(viz_env, monkeypatch):
+    cfg, kin, world, robot, viz = viz_env
+    viz.update_robot(_home(), force=True)
+
+    class Client:
+        def __init__(self, pixel, fail_after=None):
+            self.pixel, self.fail_after, self.calls = pixel, fail_after, 0
+
+        def get_render(self, h, w, **kw):
+            self.calls += 1
+            if self.fail_after is not None and self.calls > self.fail_after:
+                raise TimeoutError("stopped returning frames")
+            return np.full((h, w, 3), self.pixel, np.uint8)
+
+    first, second = Client(0, fail_after=1), Client(255)
+    viz._render_client_id = 0
+    monkeypatch.setattr(viz.server, "get_clients", lambda: {0: first, 1: second})
+    frames = viz.render_cameras()
+    import cv2
+    assert all(cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_COLOR).mean() == 255 for jpeg in frames.values())
+    assert first.calls == 2 and second.calls == 3
+    assert viz._render_client_id == 1
+    viz.render_cameras()
+    assert first.calls == 2                     # remembered failed client is skipped
+
+
+def test_live_notes_arrive_before_motion_and_history_survives(viz_env):
+    from astra_yam.astra_client import AstraResponse, FunctionCall
+    cfg, kin, world, robot, viz = viz_env
+    viz.on_trial_start("Open the case", _home())
+    viz.on_astra_call(1, 100, 3, 3)
+    viz.on_astra_stream("reset", "", "")
+    viz.on_astra_stream("arguments", '{"targets":{"left_z":0.2},"note":"Lift the case', "fc1")
+    assert "Lift the case" in viz._note_md.content
+    assert "not yet executed" in viz._note_state_md.content
+    args = {"targets": {"left_z": 0.2}, "note": "Lift the case carefully."}
+    response = AstraResponse([], [FunctionCall("c1", "move_to", args, "")], [], reasoning=["The case is held."])
+    viz.on_astra_response(response)
+    assert args["note"] in viz._note_md.content
+    assert "awaiting validation" in viz._note_state_md.content
+    assert "The case is held" in viz._reasoning_md.content
+    viz.on_tool_call("move_to", args, {"ok": False, "status": "rejected", "reason": "clearance"}, None)
+    assert "Gateway: clearance" in viz._history_md.content
+    assert "Hindsight" in viz._action_note("done", {"summary": "Opened", "hindsight": "Approach from the side"})
+    viz.on_astra_call(2, 100, 3, 3)
+    viz.on_astra_stream("reset", "", "")
+    assert "rejected" in viz._history_md.content and args["note"] in viz._history_md.content
+    viz.on_trial_start("Next trial", _home())
+    assert "Lift the case" not in viz._history_md.content
+
+
+@pytest.mark.parametrize("arguments,expected", [
+    ('{"targets":{"left_x":0.3}', ""),
+    ('{"note":"Lift \\"case\\"', 'Lift "case"'),
+    ('{"note":"Lift\\ncarefully', 'Lift\ncarefully'),
+    ('{"note":"Lift\\u00', ""),
+    ('{"note":"Lift\\u00e9"}', 'Lifté'),
+])
+def test_partial_note_decodes_escaped_json(arguments, expected):
+    assert ViserVisualizer._partial_note(arguments) == expected
+
+
+def test_connect_frames_workspace_and_view_is_client_local(viz_env):
+    from contextlib import nullcontext
+    cfg, kin, world, robot, viz = viz_env
+    client = SimpleNamespace(camera=SimpleNamespace(), atomic=nullcontext)
+    viz._on_client_connect(client)
+    assert np.allclose(client.camera.look_at, [0.35, -0.305, 0.1])
+    assert np.linalg.norm(np.asarray(client.camera.position) - client.camera.look_at) < 2.1
+    assert not any(h.visible for h in viz._cam_frustums.values())

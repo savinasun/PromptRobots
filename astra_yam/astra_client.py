@@ -6,9 +6,9 @@ import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Protocol, Tuple
+from typing import Any, Callable, Dict, List, Optional, Protocol, Tuple
 
-from astra_yam.config import REPO_ROOT, AstraConfig
+from astra_yam.config import REPO_ROOT, DIM_NAMES, AstraConfig
 
 REASONING_INCLUDE = ["reasoning.encrypted_content"]
 
@@ -171,6 +171,12 @@ class OpenAIAstraClient:
             reasoning["summary"] = self.cfg.reasoning_summary
         if reasoning:
             kwargs["reasoning"] = reasoning
+        if self.cfg.actions_only:
+            # Astra does not support effort="none". Keep encrypted reasoning for
+            # stateless tool continuity. Summaries are optional diagnostic metadata.
+            kwargs.setdefault("reasoning", {})["effort"] = "low"
+            kwargs["tool_choice"] = "required"
+            kwargs["parallel_tool_calls"] = False
         if self.cfg.max_output_tokens:
             kwargs["max_output_tokens"] = int(self.cfg.max_output_tokens)
         return kwargs
@@ -182,9 +188,34 @@ class OpenAIAstraClient:
         self._client.close()
 
     def create(self, input_items: List[dict]) -> AstraResponse:
+        return self._create(input_items)
+
+    def create_streamed(self, input_items: List[dict], on_delta: Callable[[str, str, str], None]) -> AstraResponse:
+        """Stream display-only text; return executable calls only after a complete response."""
+        return self._create(input_items, on_delta)
+
+    def _send_request(self, input_items: List[dict], on_delta=None):
+        kwargs = self._request_kwargs(input_items)
+        if on_delta is None:
+            return self._client.responses.create(**kwargs)
+        on_delta("reset", "", "")
+        kinds = {"response.function_call_arguments.delta": "arguments",
+                 "response.reasoning_summary_text.delta": "summary",
+                 "response.output_text.delta": "message"}
+        with self._client.responses.create(**kwargs, stream=True) as stream:
+            for event in stream:
+                if event.type in kinds:
+                    on_delta(kinds[event.type], event.delta, getattr(event, "item_id", ""))
+                elif event.type == "response.completed":
+                    return event.response
+                elif event.type in ("response.failed", "response.incomplete", "error"):
+                    raise RuntimeError(f"Astra stream ended with {event.type}")
+        raise RuntimeError("Astra stream ended before response.completed")
+
+    def _create(self, input_items: List[dict], on_delta=None) -> AstraResponse:
         t0 = time.perf_counter()
         try:
-            resp = self._client.responses.create(**self._request_kwargs(input_items))
+            resp = self._send_request(input_items, on_delta)
         except Exception as e:  # noqa: BLE001 - only one specific cause is handled, the rest re-raise
             if self._no_summary or not any(k in str(e).lower() for k in ("summary", "prompt_cache_key")):
                 raise
@@ -194,7 +225,7 @@ class OpenAIAstraClient:
             self._no_cache_key = True
             print(f"[astra] retrying without reasoning.summary / prompt_cache_key on {self.cfg.model}: "
                   f"{type(e).__name__}: {e}")
-            resp = self._client.responses.create(**self._request_kwargs(input_items))
+            resp = self._send_request(input_items, on_delta)
         elapsed = time.perf_counter() - t0
         items = [o.model_dump(exclude_none=True, mode="json") for o in resp.output]
         usage: Dict[str, int] = {}
@@ -249,8 +280,15 @@ class ScriptedAstraClient:
     """Replays a fixed list of tool calls; calls `give_up` once the script is exhausted."""
 
     def __init__(self, script: Optional[List[dict]] = None, tools: Optional[List[dict]] = None,
-                 model: str = "scripted-astra", delay_s: float = 0.0):
+                 model: str = "scripted-astra", delay_s: float = 0.0, actions_only: bool = False):
         self.script = list(script if script is not None else DEFAULT_SIM_SCRIPT)
+        self.actions_only = actions_only
+        if script is None and actions_only:
+            # Only adapt the built-in plumbing fixture. Explicit scripts retain
+            # their exact output, including protocol violations for regression tests.
+            self.script = [{"name": step["name"], "arguments": {
+                "targets": {d: step["arguments"]["targets"].get(d) for d in DIM_NAMES}}
+                if step["name"] == "move_to" else {}} for step in self.script]
         self.tools = tools or []
         self.model = model
         self.delay_s = delay_s
@@ -266,8 +304,11 @@ class ScriptedAstraClient:
         return cls(script=data, **kw)
 
     def build_request_dict(self, input_items: List[dict]) -> dict:
-        return {"model": self.model, "input": input_items, "tools": self.tools, "store": False,
-                "include": REASONING_INCLUDE}
+        request = {"model": self.model, "input": input_items, "tools": self.tools, "store": False,
+                   "include": REASONING_INCLUDE}
+        if self.actions_only:
+            request.update(reasoning={"effort": "low"}, tool_choice="required", parallel_tool_calls=False)
+        return request
 
     # `prompt_cache_key` is accepted by the Responses API; if this model rejects it the same one-shot
     # fallback as `reasoning.summary` applies (see `create`).
@@ -279,7 +320,8 @@ class ScriptedAstraClient:
         if self._n < len(self.script):
             step = self.script[self._n]
         else:
-            step = {"name": "give_up", "arguments": {"reason": "scripted client exhausted", "hindsight": "none"}}
+            step = {"name": "give_up", "arguments": {} if self.actions_only else {
+                "reason": "scripted client exhausted", "hindsight": "none"}}
         self._n += 1
         args = step.get("arguments", {})
         raw = args if isinstance(args, str) else json.dumps(args)
@@ -301,6 +343,6 @@ def make_astra_client(cfg: AstraConfig, tools: List[dict]) -> AstraClient:
         return OpenAIAstraClient(cfg, tools)
     if cfg.backend == "scripted":
         if cfg.script_path:
-            return ScriptedAstraClient.from_file(cfg.script_path, tools=tools)
-        return ScriptedAstraClient(tools=tools)
+            return ScriptedAstraClient.from_file(cfg.script_path, tools=tools, actions_only=cfg.actions_only)
+        return ScriptedAstraClient(tools=tools, actions_only=cfg.actions_only)
     raise ValueError(f"unknown astra backend '{cfg.backend}'")

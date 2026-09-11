@@ -14,6 +14,7 @@
 """
 from __future__ import annotations
 
+import json
 import queue
 import re
 import select
@@ -22,6 +23,7 @@ import sys
 import threading
 import time
 import xml.etree.ElementTree as ET
+from collections import deque
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
@@ -186,7 +188,7 @@ class ViserVisualizer:
         self.mode = mode
         self.server = viser.ViserServer(host=self.vc.host, port=self.vc.port, label="Astra x YAM", verbose=False)
         self.server.scene.set_up_direction("+z")
-        self.server.gui.configure_theme(show_share_button=False, brand_color=(30, 110, 190))
+        self.server.gui.configure_theme(show_share_button=False, control_width="large", brand_color=(30, 110, 190))
         main_panel = getattr(self.server.gui, "main_panel", None)
         if main_panel is not None:
             main_panel.dock_right()
@@ -215,6 +217,14 @@ class ViserVisualizer:
         self._last_update = 0.0
         self._last_q: Optional[np.ndarray] = None
         self._pending_q: Optional[np.ndarray] = None   # pose dropped by rate limiting, flushed before renders
+        self._render_retry_at: Dict[int, float] = {}
+        self._render_client_id: Optional[int] = None
+        self._render_lock = threading.RLock()
+        self._notes_lock = threading.RLock()
+        self._note_history = deque(maxlen=12)
+        self._stream_arguments: Dict[str, str] = {}
+        self._stream_summary = ""
+        self._last_stream_update = 0.0
         self._link_frames: Dict[Tuple[str, str], object] = {}
         self._skeleton: Dict[str, object] = {}
         self._tool_frames: Dict[str, object] = {}
@@ -234,6 +244,7 @@ class ViserVisualizer:
         self._build_scene()
         self._build_gui()
         self._apply_display_defaults()
+        self.server.on_client_connect(self._on_client_connect)
 
     # ------------------------------------------------------------------ misc
     def url(self) -> str:
@@ -258,8 +269,9 @@ class ViserVisualizer:
         tz = self._table_z()
         sc.add_box("/table", color=(205, 170, 125), dimensions=(1.2, 1.6, 0.02), position=(0.45, -0.305, tz - 0.01),
                    cast_shadow=False)
-        sc.add_grid("/table_grid", width=1.2, height=1.6, plane="xy", cell_size=0.1, section_size=0.5,
-                    cell_color=(160, 130, 95), section_color=(120, 90, 60), position=(0.45, -0.305, tz + 0.001))
+        self._table_grid = sc.add_grid("/table_grid", width=1.2, height=1.6, plane="xy", cell_size=0.1, section_size=0.5,
+                                      cell_color=(193, 174, 148), section_color=(166, 145, 116),
+                                      position=(0.45, -0.305, tz + 0.001))
         for arm in ARMS:
             off = arm_offset(arm)
             sc.add_frame(f"/robot/{arm}", show_axes=False, position=off)
@@ -384,6 +396,28 @@ class ViserVisualizer:
                 self._gizmos[name] = g
 
     # ---------------------------------------------------------------- cameras
+    def _on_client_connect(self, client) -> None:
+        self._set_view(client, "Overview")
+
+    def _set_view(self, client, view: str) -> None:
+        with client.atomic():
+            client.camera.up_direction = (0.0, 0.0, 1.0)
+            if view == "Overview":
+                client.camera.position = (-0.9, -1.5, 1.15)
+                client.camera.look_at = (0.35, -0.305, self._table_z() + 0.10)
+                client.camera.fov = 0.85
+            else:
+                name = {"Top camera": "top_cam", "Left wrist": "left_cam", "Right wrist": "right_cam"}[view]
+                pos, wxyz, fov = self.camera_pose(name)
+                client.camera.position = pos
+                client.camera.wxyz = wxyz
+                client.camera.fov = fov
+
+    def _on_view(self, event) -> None:
+        # View controls affect only the operator who clicked them.
+        if event.client is not None:
+            self._set_view(event.client, self._view_select.value)
+
     def _top_camera_pose(self) -> Tuple[np.ndarray, np.ndarray]:
         pos = np.array([-0.25, -0.305, 0.95])
         return pos, look_at_wxyz(pos, (0.35, -0.305, self._table_z()))
@@ -412,17 +446,33 @@ class ViserVisualizer:
         handles = list(self._cam_frustums.values()) + list(self._bounds.values()) + list(self._tool_axes.values())
         handles += list(self._grasp_markers.values()) + list(self._arm_axes) + list(self._plan_handles)
         handles += list(self._gizmos.values())
+        handles += [self._table_grid]
         return [h for h in handles if h is not None]
 
     def render_cameras(self, names: Sequence[str] = CAMERA_NAMES) -> Optional[Dict[str, bytes]]:
         """JPEG renders from the connected browser, or None when unavailable (caller falls back)."""
+        with self._render_lock:
+            return self._render_cameras(names)
+
+    def _render_cameras(self, names: Sequence[str]) -> Optional[Dict[str, bytes]]:
         if not self._render_cb.value:
+            self._render_md.content = "Schematic cameras selected."
             return None
         clients = self.server.get_clients()
+        self._render_retry_at = {cid: t for cid, t in self._render_retry_at.items() if cid in clients}
         if not clients:
+            self._render_md.content = "Schematic fallback · connect a browser for 3D camera images."
             return None
-        client = clients[min(clients)]
-        out: Dict[str, bytes] = {}
+        now = time.monotonic()
+        ready = [cid for cid in sorted(clients, reverse=True) if self._render_retry_at.get(cid, 0.0) <= now]
+        if not ready:
+            remaining = max(0, int(min(self._render_retry_at.values()) - now) + 1)
+            self._render_md.content = (f"Schematic fallback · browser render cooling down ({remaining}s). "
+                                       "Keep the Viser tab visible, then use **Retry 3D cameras**.")
+            return None
+        if self._render_client_id in ready:
+            ready.remove(self._render_client_id)
+            ready.insert(0, self._render_client_id)
         self.flush()                       # the render must show the pose the observation reports
         with self._lock:
             hidden = []
@@ -439,18 +489,34 @@ class ViserVisualizer:
             if had_labels:
                 time.sleep(self.vc.label_settle_s)
             try:
-                for name in names:
-                    pos, wxyz, fov = self.camera_pose(name)
-                    img = client.get_render(self.vc.render_height, self.vc.render_width, wxyz=wxyz, position=pos, fov=fov,
-                                            transport_format="jpeg", timeout=self.vc.render_timeout_s)
-                    bgr = cv2.cvtColor(np.asarray(img)[..., :3], cv2.COLOR_RGB2BGR)
-                    ok, buf = cv2.imencode(".jpg", bgr, [int(cv2.IMWRITE_JPEG_QUALITY), int(self.cfg.cameras.jpeg_quality)])
-                    if not ok:
-                        return None
-                    out[name] = buf.tobytes()
-            except Exception as e:  # noqa: BLE001 - timeouts, disconnects
-                print(f"[viser] render failed ({type(e).__name__}: {e}); using fallback cameras")
-                return None
+                # At most one alternate tab per observation, so many unresponsive
+                # clients cannot multiply the timeout indefinitely. Never mix frames
+                # from different clients or reuse images from a previous pose.
+                for cid in ready[:2]:
+                    out: Dict[str, bytes] = {}
+                    try:
+                        for name in names:
+                            pos, wxyz, fov = self.camera_pose(name)
+                            img = clients[cid].get_render(self.vc.render_height, self.vc.render_width,
+                                                         wxyz=wxyz, position=pos, fov=fov,
+                                                         transport_format="jpeg", timeout=self.vc.render_timeout_s)
+                            bgr = cv2.cvtColor(np.asarray(img)[..., :3], cv2.COLOR_RGB2BGR)
+                            ok, buf = cv2.imencode(".jpg", bgr, [int(cv2.IMWRITE_JPEG_QUALITY), int(self.cfg.cameras.jpeg_quality)])
+                            if not ok:
+                                raise ValueError("could not encode camera image")
+                            out[name] = buf.tobytes()
+                    except Exception as e:  # noqa: BLE001 - timeouts, disconnects, invalid frames
+                        self._render_retry_at[cid] = time.monotonic() + self.vc.render_retry_s
+                        self._render_client_id = None
+                        self._render_md.content = (f"Schematic fallback · {type(e).__name__}: {e}\n\n"
+                                                   "Keep the Viser tab visible; reload it if frozen, then retry.")
+                        print(f"[viser] client {cid} render failed ({type(e).__name__}: {e}); "
+                              f"retrying this client after {self.vc.render_retry_s:g}s")
+                        continue
+                    self._render_client_id = cid
+                    self._render_retry_at.pop(cid, None)
+                    self._render_md.content = f"3D cameras active · browser {cid} · {self.vc.render_width} × {self.vc.render_height}"
+                    return out
             finally:
                 with self.server.atomic():
                     for h in hidden:
@@ -459,7 +525,13 @@ class ViserVisualizer:
                         except Exception:  # noqa: BLE001
                             pass
                     self._create_labels()
-        return out
+        return None
+
+    def _retry_render(self) -> None:
+        with self._render_lock:
+            self._render_retry_at.clear()
+            self._render_client_id = None
+            self._render_md.content = "3D camera retry queued for the next observation."
 
     # ------------------------------------------------------------ robot pose
     def update_robot(self, q14: np.ndarray, force: bool = False) -> None:
@@ -634,6 +706,9 @@ class ViserVisualizer:
 
     def _apply_display_defaults(self) -> None:
         self._set_visible(self._bounds.values(), self._show_bounds_cb.value)
+        self._set_visible(self._cam_frustums.values(), self._show_cams_cb.value)
+        self._set_visible(list(self._tool_axes.values()) + list(self._grasp_markers.values()) + self._arm_axes,
+                          self._show_tool_cb.value)
 
     def clear_plan(self) -> None:
         with self._lock:
@@ -650,7 +725,13 @@ class ViserVisualizer:
         with gui.add_folder("Trial"):
             self._status_md = gui.add_markdown(self._status_markdown())
             self._progress = gui.add_progress_bar(0.0, color="blue")
+        with gui.add_folder("Live notes"):
+            self._note_state_md = gui.add_markdown("Waiting for a trial.")
             self._note_md = gui.add_markdown("_Astra's notes appear here._")
+            with gui.add_folder("Reasoning summary", expand_by_default=False):
+                self._reasoning_md = gui.add_markdown("_Shown when returned by Astra._")
+            with gui.add_folder("Recent activity", expand_by_default=False):
+                self._history_md = gui.add_markdown("_No activity yet._")
         self._objects_md = None
         if self.world is not None:
             with gui.add_folder("Scene objects", expand_by_default=False):
@@ -672,15 +753,22 @@ class ViserVisualizer:
         with gui.add_folder("Cameras"):
             self._render_cb = gui.add_checkbox("Agent sees this 3D render", bool(self.vc.render_observations and self.mode == "sim"),
                                                hint="Needs a connected browser; otherwise schematic images are used")
+            self._render_md = gui.add_markdown("Waiting for the first camera observation.")
+            self._render_retry_btn = gui.add_button("Retry 3D cameras", visible=self.mode == "sim")
             blank = np.full((120, 160, 3), 40, np.uint8)
-            self._cam_images = {name: gui.add_image(blank, label=name) for name in CAMERA_NAMES}
+            self._cam_images = {}
+            for name in CAMERA_NAMES:
+                with gui.add_folder(name, expand_by_default=name == "top_cam"):
+                    self._cam_images[name] = gui.add_image(blank, label=name)
         with gui.add_folder("Display", expand_by_default=False):
+            self._view_select = gui.add_dropdown("View", ("Overview", "Top camera", "Left wrist", "Right wrist"))
+            self._view_btn = gui.add_button("Reset view")
             big = any(self.cfg.bounds.for_dim(d)[1] - self.cfg.bounds.for_dim(d)[0] > 1.0 for d in ("x", "y", "z"))
             self._show_bounds_cb = gui.add_checkbox("Workspace bounds", not big,
                                                     hint="off by default when the bounds span the whole reach envelope")
             self._show_plan_cb = gui.add_checkbox("Planned path", True)
-            self._show_cams_cb = gui.add_checkbox("Camera frustums", True)
-            self._show_tool_cb = gui.add_checkbox("Tool frames", True)
+            self._show_cams_cb = gui.add_checkbox("Camera frustums", False)
+            self._show_tool_cb = gui.add_checkbox("Tool frames", False)
 
         self._start_btn.on_click(lambda _e: self._on_start())
         self._estop_btn.on_click(lambda _e: self._on_estop())
@@ -689,10 +777,13 @@ class ViserVisualizer:
         self._send_btn.on_click(lambda _e: self._on_send())
         self._edit_cb.on_update(lambda _e: self._set_edit_objects(self._edit_cb.value))
         self._reset_btn.on_click(lambda _e: self._on_reset_objects())
+        self._render_retry_btn.on_click(lambda _e: self._retry_render())
+        self._view_select.on_update(self._on_view)
+        self._view_btn.on_click(self._on_view)
         self._show_bounds_cb.on_update(lambda _e: self._set_visible(self._bounds.values(), self._show_bounds_cb.value))
         self._show_plan_cb.on_update(lambda _e: self._set_visible(self._plan_handles, self._show_plan_cb.value))
         self._show_cams_cb.on_update(lambda _e: self._set_visible(self._cam_frustums.values(), self._show_cams_cb.value))
-        self._show_tool_cb.on_update(lambda _e: self._set_visible(list(self._tool_axes.values()) + list(self._grasp_markers.values()),
+        self._show_tool_cb.on_update(lambda _e: self._set_visible(list(self._tool_axes.values()) + list(self._grasp_markers.values()) + self._arm_axes,
                                                                   self._show_tool_cb.value))
 
     @staticmethod
@@ -792,10 +883,13 @@ class ViserVisualizer:
             pass
 
     def set_note(self, text: str) -> None:
-        try:
+        with self._notes_lock:
             self._note_md.content = text
-        except Exception:  # noqa: BLE001
-            pass
+
+    def _record_activity(self, text: str) -> None:
+        with self._notes_lock:
+            self._note_history.appendleft(f"**Call {self._status['llm_calls']}** · {text}")
+            self._history_md.content = "\n\n---\n\n".join(self._note_history)
 
     def set_frames(self, frames: Dict[str, bytes], preview_width: int = 320) -> None:
         for name, jpeg in frames.items():
@@ -813,6 +907,13 @@ class ViserVisualizer:
     # ---------------------------------------------------------- trial hooks
     def on_trial_start(self, goal: str, q0: np.ndarray) -> None:
         self.clear_plan()
+        with self._notes_lock:
+            self._note_history.clear()
+            self._history_md.content = "_No activity yet._"
+            self._stream_arguments.clear()
+            self._stream_summary = ""
+            self._reasoning_md.content = "_Shown when returned by Astra._"
+            self._note_state_md.content = "Waiting for Astra."
         self._status.update({"llm_calls": 0, "waypoints": 0, "remaining": self.cfg.limits.max_waypoints, "last_result": ""})
         self.set_status(goal=goal, phase="observing")
         self.set_note("_Astra's notes appear here._")
@@ -824,29 +925,98 @@ class ViserVisualizer:
         self.set_status(waypoints=step, remaining=remaining)
 
     def on_astra_call(self, i: int, max_calls: int, n_items: int, n_images: int) -> None:
-        self.set_status(phase=f"Astra thinking (call {i}, {n_items} items, {n_images} images)", llm_calls=i, max_calls=max_calls)
+        with self._notes_lock:
+            self._stream_arguments.clear()
+            self._stream_summary = ""
+            self._last_stream_update = 0.0
+            self._note_state_md.content = f"Call {i} · waiting for response…"
+            self._reasoning_md.content = "_Waiting for a reasoning summary._"
+        self.set_status(phase=f"Astra selecting action (call {i}, {n_items} items, {n_images} images)", llm_calls=i, max_calls=max_calls)
+
+    @staticmethod
+    def _partial_note(arguments: str) -> str:
+        # This is a display preview only. Tool execution still uses json.loads
+        # and the gateway after response.completed, never these partial bytes.
+        match = re.search(r'"note"\s*:\s*("(?:[^"\\]|\\.)*)', arguments)
+        if match is None:
+            return ""
+        try:
+            return json.loads(match[1] + '"')
+        except json.JSONDecodeError:
+            return ""                     # a split Unicode escape; wait for the next delta
+
+    def on_astra_stream(self, kind: str, delta: str, item_id: str) -> None:
+        with self._notes_lock:
+            if kind == "reset":
+                self._stream_arguments.clear()
+                self._stream_summary = ""
+                self._last_stream_update = 0.0
+                self._note_state_md.content = f"Call {self._status['llm_calls']} · waiting for response…"
+                self._note_md.content = "_Receiving a new action._"
+                self._reasoning_md.content = "_Waiting for a reasoning summary._"
+                return
+            if kind == "arguments":
+                self._stream_arguments[item_id] = (self._stream_arguments.get(item_id, "") + delta)[-32768:]
+            elif kind == "summary":
+                self._stream_summary = (self._stream_summary + delta)[-16000:]
+            now = time.monotonic()
+            if now - self._last_stream_update < 0.1:
+                return
+            self._last_stream_update = now
+            self._note_state_md.content = f"Call {self._status['llm_calls']} · streaming (not yet executed)"
+            if kind == "arguments":
+                note = self._partial_note(self._stream_arguments[item_id])
+                if note:
+                    self._note_md.content = note
+            if self._stream_summary:
+                self._reasoning_md.content = self._stream_summary
+
+    @staticmethod
+    def _action_note(name: str, args: dict) -> str:
+        if name == "move_to":
+            targets = ", ".join(f"{k}={v}" for k, v in (args.get("targets") or {}).items() if v is not None)
+            return f"**move_to**\n\n{args.get('note') or '_No language note returned._'}\n\n`{targets}`"
+        text = f"**{name}**\n\n{args.get('summary') or args.get('reason') or args.get('note') or ''}"
+        if args.get("hindsight"):
+            text += f"\n\n_Hindsight:_ {args['hindsight']}"
+        return text
 
     def on_astra_response(self, resp) -> None:
+        with self._notes_lock:
+            self._reasoning_md.content = "\n\n".join(resp.reasoning) or "_No reasoning summary returned._"
+            if resp.function_calls:
+                call = resp.function_calls[0]
+                self.set_note(self._action_note(call.name, call.arguments or {}))
+            elif resp.messages:
+                self.set_note("\n\n".join(resp.messages))
+            self._note_state_md.content = f"Call {self._status['llm_calls']} · received; awaiting validation"
         self.set_status(phase=f"Astra answered in {resp.elapsed_s:.1f}s")
 
     def on_plan(self, plan) -> None:
         self.show_plan(plan)
+        self._note_state_md.content = f"Call {self._status['llm_calls']} · executing {plan.steps} waypoints"
         self.set_status(phase=f"executing {plan.steps} waypoints")
 
     def on_tool_call(self, name: str, args: dict, payload: Optional[dict], plan) -> None:
         args = args or {}
+        text = self._action_note(name, args)
+        self.set_note(text)
+        result = (payload or {}).get("status", name)
+        self._note_state_md.content = f"Call {self._status['llm_calls']} · {result}"
+        reason = (payload or {}).get("reason")
+        self._record_activity(f"{result}\n\n{text}" + (f"\n\nGateway: {reason}" if reason else ""))
         if name == "move_to":
-            note = args.get("note") or ""
-            targets = ", ".join(f"{k}={v}" for k, v in (args.get("targets") or {}).items())
-            self.set_note(f"**move_to** `{targets}`  \n{note}")
             if payload is not None:
                 status = payload.get("status")
                 text = f"{status} ({payload.get('steps', 0)} steps)" if payload.get("ok") else f"{status}: {payload.get('reason', '')}"
                 self.set_status(last_result=text, phase="observing")
-        else:
-            self.set_note(f"**{name}**: {args.get('summary') or args.get('reason') or ''}  \n_hindsight:_ {args.get('hindsight', '')}")
 
     def on_end(self, outcome) -> None:
+        self.flush()
+        self._note_state_md.content = f"Trial finished · {outcome.status}"
+        detail = outcome.error or outcome.reason or outcome.summary
+        if detail:
+            self._record_activity(f"{outcome.status}: {detail}")
         self.set_status(phase=f"finished: {outcome.status}", llm_calls=outcome.llm_calls, waypoints=outcome.waypoints)
 
 
