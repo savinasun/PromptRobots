@@ -1,6 +1,6 @@
 import pytest
 
-from astra_yam import astra_client
+from utils import astra_client
 
 
 def test_key_from_secrets_file(tmp_path, monkeypatch):

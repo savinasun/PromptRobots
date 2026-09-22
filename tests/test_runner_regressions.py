@@ -1,6 +1,6 @@
 import pytest
 
-from astra_yam.cli import _config_from_args, build_parser
+from utils.cli import _config_from_args, build_parser
 
 
 def test_cli_honors_waypoint_budget_and_policy_notes():
@@ -38,5 +38,5 @@ def test_estop_never_homes_on_end(tmp_path, monkeypatch):
     runner.hooks = Hooks()
     def unexpected_motion(*args, **kwargs):
         pytest.fail("homing after estop")
-    monkeypatch.setattr("astra_yam.session.move_joint_space", unexpected_motion)
+    monkeypatch.setattr("utils.session.move_joint_space", unexpected_motion)
     assert runner.run("stop").status == "estop"

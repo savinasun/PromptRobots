@@ -3,9 +3,9 @@ from pathlib import Path
 
 import numpy as np
 
-from astra_yam.config import Bounds
-from astra_yam.embodiment import build_system_prompt, build_tools, format_eef_state, format_joint_pos
-from astra_yam.observation import (
+from utils.config import Bounds
+from utils.embodiment import build_system_prompt, build_tools, format_eef_state, format_joint_pos
+from utils.observation import (
     IMAGE_OMITTED_TEXT,
     build_observation_item,
     count_images,
@@ -33,13 +33,13 @@ def test_tools_match_reference_verbatim():
 def test_system_prompt_matches_reference_verbatim():
     # The reference transcript predates the camera-use section, which is appended at the end of
     # SYSTEM_PROMPT.md; everything the reference trials saw must still be there byte-for-byte.
-    prompt = build_system_prompt(str(ROOT / "configs" / "SYSTEM_PROMPT.md"), 100)
+    prompt = build_system_prompt(str(ROOT / "docs" / "SYSTEM_PROMPT.md"), 100)
     assert prompt.startswith(EXAMPLE["input"][0]["content"])
-    assert "budget of 25 LLM calls" in build_system_prompt(str(ROOT / "configs" / "SYSTEM_PROMPT.md"), 25)
+    assert "budget of 25 LLM calls" in build_system_prompt(str(ROOT / "docs" / "SYSTEM_PROMPT.md"), 25)
 
 
 def test_system_prompt_describes_camera_use():
-    prompt = build_system_prompt(str(ROOT / "configs" / "SYSTEM_PROMPT.md"), 100)
+    prompt = build_system_prompt(str(ROOT / "docs" / "SYSTEM_PROMPT.md"), 100)
     assert "Cameras:" in prompt
     assert "wrist camera per arm" in prompt and "steerable sensors" in prompt
 
@@ -87,8 +87,8 @@ def test_prune_image_history_keeps_last_n():
 
 
 def test_tilt_note_only_when_released():
-    from astra_yam.embodiment import tilt_note
-    path = str(ROOT / "configs" / "SYSTEM_PROMPT.md")
+    from utils.embodiment import tilt_note
+    path = str(ROOT / "docs" / "SYSTEM_PROMPT.md")
     assert build_system_prompt(path, 100, bounds=Bounds()).startswith(EXAMPLE["input"][0]["content"])
     released = build_system_prompt(path, 100, bounds=Bounds(pitch=(-0.7, 0.7), roll=(-0.7, 0.7)))
     assert released.endswith(tilt_note()) and "pitch" in released

@@ -1,11 +1,11 @@
 import numpy as np
 import pytest
 
-from astra_yam.config import ARMS, PipelineConfig
-from astra_yam.embodiment import ARM_SLICES
-from astra_yam.gateway import SafetyGateway
-from astra_yam.kinematics import ArmKinematics
-from astra_yam.sim import GRIPPER_MAX_OPENING_M, SCENES, SimCameraSource, SimWorld, SimYamRobot
+from utils.config import ARMS, PipelineConfig
+from utils.embodiment import ARM_SLICES
+from utils.gateway import SafetyGateway
+from utils.kinematics import ArmKinematics
+from utils.sim import GRIPPER_MAX_OPENING_M, SCENES, SimCameraSource, SimWorld, SimYamRobot
 
 
 def _setup(scene):
@@ -128,7 +128,7 @@ def test_open_jaws_straddle_then_close_grasps():
 
 
 def test_cli_scene_choices_match_presets():
-    from astra_yam.cli import build_parser
+    from utils.cli import build_parser
     parser = build_parser()
     run_parser = next(a for a in parser._subparsers._group_actions[0].choices.values() if a.prog.endswith(" run"))
     scene_action = next(a for a in run_parser._actions if "--scene" in a.option_strings)

@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from astra_yam.astra_client import AstraResponse, _extract_reasoning
-from astra_yam.config import AstraConfig
+from utils.astra_client import AstraResponse, _extract_reasoning
+from utils.config import AstraConfig
 
 
 def _run(tmp_path, script=None, **overrides):
@@ -50,7 +50,7 @@ def test_transcript_records_rejections_and_missing_reasoning(tmp_path):
 
 
 def test_operator_feedback_appears_in_the_transcript(tmp_path):
-    from astra_yam.session import OperatorInput
+    from utils.session import OperatorInput
     from test_session_sim import _make
 
     cfg, runner, world, astra = _make(tmp_path)
@@ -78,7 +78,7 @@ def test_reasoning_summary_is_requested_and_dropped_when_rejected(monkeypatch):
     """`reasoning.summary` is what makes the trace readable; a model that rejects it must not kill the trial."""
     import openai
 
-    from astra_yam.astra_client import OpenAIAstraClient
+    from utils.astra_client import OpenAIAstraClient
 
     class FakeItem:
         def model_dump(self, **kw):
@@ -118,7 +118,7 @@ def test_chunk_counters_per_move_and_totals(tmp_path):
     assert "mean chunk 90.0 (min 90, max 90)" in text
 
     table = text.split("--- ACTION CHUNKS ")[1]
-    assert "call  cartesian  predicted  executed  paced  seconds  status" in table
+    assert "call  asked  cartesian  predicted  executed  paced  seconds  status" in table
     n_moves = outcome.llm_calls - 1                        # the last scripted call is `done`
     assert f"{n_moves} move_to calls (0 rejected, 0 paced)" in table
     assert f"{outcome.waypoints} waypoints executed of {outcome.waypoints_predicted} predicted" in table

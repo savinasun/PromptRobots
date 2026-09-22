@@ -5,18 +5,24 @@ import pytest
 import yaml
 from conftest import ROOT
 
-from astra_yam.config import Bounds, PipelineConfig
-from astra_yam.embodiment import build_tools
-from astra_yam.observation import build_observation_item, observation_text
-from astra_yam.prompts import load_prompts, prompt
+from utils.config import Bounds, PipelineConfig
+from utils.embodiment import build_tools
+from utils.observation import build_observation_item, observation_text
+from utils.prompts import load_prompts, prompt
 
 PROMPTS = str(ROOT / "configs" / "PROMPTS.yaml")
 
 
-def test_default_paths_point_into_configs():
+def test_default_prompt_paths_exist():
+    """PROMPTS.yaml is configuration; the long prose prompts are documentation, edited in docs/."""
     cfg = PipelineConfig()
-    for path in (cfg.prompts_path, cfg.system_prompt_path, cfg.tilt_note_path):
-        assert path.startswith(str(ROOT / "configs")) and ROOT.joinpath(path).exists()
+    assert cfg.prompts_path.startswith(str(ROOT / "configs"))
+    for path in (cfg.system_prompt_path, cfg.tilt_note_path,
+                 cfg.planning.system_prompt_path, cfg.planning.motion_prompt_path):
+        assert path.startswith(str(ROOT / "docs")), path
+    for path in (cfg.prompts_path, cfg.system_prompt_path, cfg.tilt_note_path,
+                 cfg.planning.system_prompt_path, cfg.planning.motion_prompt_path):
+        assert ROOT.joinpath(path).exists(), path
 
 
 def test_dotted_lookup_and_missing_keys():
@@ -42,12 +48,13 @@ def test_every_prompt_string_is_used_somewhere():
     """A key nobody reads is dead copy; a key read with the wrong name fails the tests above."""
     used = {
         "tools.move_to.description", "tools.move_to.targets", "tools.move_to.note",
+        "tools.move_to.sequence_description", "tools.move_to.waypoints", "session.plan_continuation",
         "tools.done.description", "tools.give_up.description", "tools.hindsight",
         "observation.text", "observation.camera_label", "observation.image_omitted",
         "session.goal", "session.operator_feedback", "session.tool_call_reminder",
         "tools.observe", "tools.lesson", "session.scene_changed", "session.reactive_context",
         "session.reactive_rules", "session.reactive_reminder", "session.policy_notes",
-        "tools.action_targets", "session.actions_only", "session.language_output", "session.action_context",
+        "tools.action_targets", "tools.action_reason", "session.actions_only", "session.language_output", "session.action_context",
         "session.reactive_lessons",
     }
 
@@ -85,7 +92,7 @@ def test_text_comes_from_the_file_not_the_code(tmp_path):
 @pytest.mark.parametrize("with_notes", [False, True])
 @pytest.mark.parametrize("actions_only", [False, True])
 def test_inspected_prompt_matches_actual_runner_request(tmp_path, capsys, reactive, with_notes, actions_only):
-    from astra_yam.cli import build_parser, cmd_show_prompt
+    from utils.cli import build_parser, cmd_show_prompt
     from test_session_sim import _make
 
     notes = tmp_path / "notes.md"
@@ -113,8 +120,8 @@ def test_inspected_prompt_matches_actual_runner_request(tmp_path, capsys, reacti
 
 
 def test_task_and_scene_do_not_select_policy_advice():
-    from astra_yam.cli import _config_from_args, build_parser
-    from astra_yam.embodiment import build_policy_prompt
+    from utils.cli import _config_from_args, build_parser
+    from utils.embodiment import build_policy_prompt
 
     bundles = []
     for scene, goal in [("airpod_bowl", "Place the charging case in the green bowl."),

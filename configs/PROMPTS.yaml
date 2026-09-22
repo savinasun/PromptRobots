@@ -1,6 +1,6 @@
 # Every piece of text the model is shown, apart from the two long prose files next to this one
-# (SYSTEM_PROMPT.md and TILT_NOTE.md). Nothing model-facing is hard-coded in astra_yam/*.py:
-# the loader is astra_yam/prompts.py and each key is addressed as e.g. prompt("tools.note").
+# (docs/SYSTEM_PROMPT.md and docs/TILT_NOTE.md). Nothing model-facing is hard-coded in utils/*.py:
+# the loader is utils/prompts.py and each key is addressed as e.g. prompt("tools.note").
 #
 # `>-` folds every line break into a single space, so a description stays one line in the request no
 # matter how it is wrapped here; `|-` keeps the line breaks exactly as written. Do not leave a blank
@@ -11,6 +11,10 @@ tools:
     All declared dimensions must be present. Set each changed dimension to a numeric absolute target;
     set every unchanged dimension to null to preserve its current value. Supply at least one numeric target.
     No strings, commentary, or extra fields are allowed.
+  action_reason: >-
+    One short sentence on why the trial is ending: what was achieved, or what specifically blocked it.
+    This is the only record of the decision. State the obstacle, not the scene: no progress report,
+    no description of the images, no restatement of the plan.
   observe: >-
     Capture another observation while holding the measured arm pose and preserving the gripper command.
     Use to resolve uncertain object locations or verify an action result without moving. Costs one LLM call, no motion waypoints.
@@ -27,6 +31,22 @@ tools:
       depending on mounting. Rotation dimensions are absolute targets measured relative to the trial's start
       orientation (0 means the start orientation) and interpolate linearly without wrapping, so prefer
       intermediate values for large rotations. Per-dimension bounds: {bounds}.
+    sequence_description: >-
+      Move through a sequence of absolute Cartesian end-effector waypoints (meters for positions, radians for
+      rotations, per the dimension labels). Consecutive waypoints are joined by straight lines interpolated at
+      a fixed safe speed, and the whole path is validated before any motion: if any leg is unreachable or
+      unsafe, nothing executes and the rejection names the leg. Within a waypoint, unnamed dimensions hold the
+      value the PREVIOUS waypoint left them at, so each leg only names what it changes. Send the whole stroke
+      you intend - approach, contact and follow-through - rather than one leg per call: the path is checked as
+      a unit and you are not asked again between legs. Stop the sequence where you need to see the result
+      before deciding anything further. At most {max_waypoints} waypoints per call. Coordinates are absolute in
+      the embodiment's declared frame; on multi-arm embodiments each arm uses its own base frame and axes may
+      differ between arms depending on mounting. Rotation dimensions are absolute targets measured relative to
+      the trial's start orientation (0 means the start orientation) and interpolate linearly without wrapping,
+      so prefer intermediate waypoints for large rotations. Per-dimension bounds: {bounds}.
+    waypoints: >-
+      Ordered list of waypoints, each a map of dimension name to value, executed one after another without
+      stopping. A single-target move is a list of one. At most {max_waypoints} entries.
     targets: >-
       Map of dimension name to value. Valid names: {dim_names}
     note: >-
@@ -65,7 +85,8 @@ session:
     ACTION-ONLY OUTPUT CONTRACT. Select the next action directly from the current observation.
     Do not emit a thinking section, reasoning, analysis, plans, explanations, narration, or any language response.
     Return exactly one of the provided action tool calls and only its schema-defined arguments.
-    move_to accepts numeric targets, with null for dimensions to hold. Terminal and observe actions take {{}}.
+    move_to accepts only its schema-defined numeric fields, with null for dimensions to hold; when the schema
+    declares a waypoint sequence, send the whole intended stroke as one list. Terminal and observe actions take {{}}.
     Do not generate note, lesson, summary, reason, or hindsight fields. This output contract overrides any
     request for written commentary in optional strategy advice or operator feedback. Use observations and
     action results to adapt the next action without writing intermediate deliberation or memory notes.
@@ -106,6 +127,14 @@ session:
     Scene or operator guidance changed while deciding. This proposed action was not executed.
     Re-localize task-relevant objects and reassess action preconditions from the new observation;
     previous target coordinates and assumptions may be stale.
+  plan_continuation: |-
+    Continuing under the same System 2 plan: motion turn {done} of {total} is complete, {remaining} remain
+    before System 2 is consulted again. The observation below is fresh. Carry out the next part of the
+    standing instruction, or repair what the last result shows went wrong. Every motion must change
+    something: never re-command a dimension to the value it already holds, and never send a token move to
+    fill a turn. If the standing instruction is genuinely finished and nothing remains to carry out, say so
+    by making the next motion the instruction implies; System 2 sees each result and reassesses on its own
+    schedule.
   goal: >-
     Goal: {goal}
   operator_feedback: >-

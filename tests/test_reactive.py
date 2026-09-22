@@ -6,9 +6,9 @@ import cv2
 import numpy as np
 import pytest
 
-from astra_yam.config import ReactiveConfig
-from astra_yam.reactive import EpisodeMemory, changed_fraction
-from astra_yam.sim import SimWorld
+from utils.config import ReactiveConfig
+from utils.reactive import EpisodeMemory, changed_fraction
+from utils.sim import SimWorld
 from test_session_sim import _make
 
 

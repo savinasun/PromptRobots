@@ -11,38 +11,57 @@ def main():
         str(repo_root / "scripts" / "run_astra_yam.sh"),
         "run",
         "--config", str(repo_root / "configs" / "skild_yam_8.yaml"),
-        # Start the browser-based 3D visualization and operator interface.
-        "--viser",
+        # Qwen plans in text; Astra converts each plan into motion targets.
+        "--planning",
         # Skip the confirmation prompt before moving the robot.
         "--yes",
-
-        # TEST IN SIMULATION
-        # Switch both hardware backends to simulation.
-        "--sim",
-        "--scene",
-        "airpods",
+        # Set goal for planner.
         "--goal",
-        "Pick up the AirPods charging case and open the lid.",
-        "--set", 
-        "motion.arm_clearance_m=0",
-        # TEST IN REAL
-        # "--goal",
-        # "Pick up the AirPods charging case and put it in the teal bowl.",
+        "Please keep your end effector closed and act as a pointer, please push to move the CeraVe lotion, the airpod case, the toothbrush and the hand sanitizer in sequence.",
 
-        # Allow action notes, justifications, and other language output.
-        "--language-output",
-        # Use the model's lowest supported reasoning-effort level.
-        "--effort", "low",
-        # Retain images from the two most recent observations in model context.
-        "--image-history", "2",
+        # ************************************* TEST IN REAL ****************************************
+        # System 2 reasoning effort. This is the single biggest cost in the loop: measured on this exact
+        # planner request (qwen/qwen3.8-max-0902, the only OpenRouter provider is Alibaba at ~45 tok/s),
+        #   high   130 s  (5468 output tokens, 4900 of them reasoning)
+        #   medium  75 s  (3522 / 2973)
+        #   low     37 s  (1564 / 1034)      <- plan text stayed ~2 k characters at every level
+        # Omitting the flag is NOT cheap: Qwen then thinks as if effort were high (112 s), so set it.
+        "--planner-effort", "low",
+        # Faster alternative: run System 2 on Astra through OpenAI's own API (14 s at high effort, 8 s at
+        # medium, same request) instead of Qwen via OpenRouter.
+        # "--planner-backend", "openai",
+        # "--planner-model", "gpt-6-astra",
+
+        # NOT using "--language-output": with planning on, System 2 writes the scene assessment and
+        # progress notes, and System 1 restating them in its own words was ~60% of its output tokens on the
+        # robot's critical path. System 1 is on the action-only contract; the plan text is in notes.md.
+        # Set System 1 (Astra)'s reasoning effort.
+        "--effort", "high",
+        # Retain images from the three most recent observations in model context.
+        "--image-history", "3",
         # Use the faster preset for arm, wrist, gripper, and settling motion.
         "--fast",
-        # Stop the trial after at most 100 model calls.
+        # Stop after at most 100 total calls: up to 50 planner + motion cycles.
         "--max-calls", "100",
         # Stop the trial after at most 2,100 seconds (35 minutes).
         "--max-seconds", "2100",
         # Request automatic readable reasoning summaries from the Astra API.
         "--set", "astra.reasoning_summary=auto",
+        # Reset arm to home position
+        "--set", "motion.arm_clearance_m=0",
+
+        # ************************************* TEST IN SIMULATION ****************************************
+
+        # Start the browser-based 3D visualization and operator interface.
+        # "--viser",
+        # Switch both hardware backends to simulation.
+        # "--sim",
+        # "--scene",
+        # "airpods",
+        # "--goal",
+        # "Pick up the AirPods charging case and open the lid.",
+        # "--set",
+        # "motion.arm_clearance_m=0",
     ]
 
     print("Running command:")

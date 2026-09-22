@@ -6,9 +6,9 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from astra_yam.cli import _config_from_args, build_parser
-from astra_yam.config import AstraConfig, PipelineConfig
-from astra_yam.observation import build_observation_item, count_images, images_kept_before, prune_image_history
+from utils.cli import _config_from_args, build_parser
+from utils.config import AstraConfig, PipelineConfig
+from utils.observation import build_observation_item, count_images, images_kept_before, prune_image_history
 
 
 def _conversation(n_turns: int, frames=None):
@@ -62,7 +62,7 @@ def test_bounded_history_stops_the_request_from_growing():
 def test_prompt_cache_key_is_sent_and_dropped_if_rejected(monkeypatch):
     import openai
 
-    from astra_yam.astra_client import OpenAIAstraClient
+    from utils.astra_client import OpenAIAstraClient
 
     class FakeResponses:
         def __init__(self):
@@ -102,11 +102,11 @@ def test_fast_profile_speeds_up_motion_without_overriding_explicit_flags():
 
 def test_faster_speed_means_proportionally_fewer_waypoints():
     """The wall clock of a motion is waypoints / cadence_hz, so speed maps straight onto time."""
-    from astra_yam.config import ARMS
-    from astra_yam.embodiment import ARM_SLICES
-    from astra_yam.gateway import SafetyGateway
-    from astra_yam.kinematics import ArmKinematics
-    from astra_yam.sim import SimYamRobot
+    from utils.config import ARMS
+    from utils.embodiment import ARM_SLICES
+    from utils.gateway import SafetyGateway
+    from utils.kinematics import ArmKinematics
+    from utils.sim import SimYamRobot
 
     steps = {}
     for speed in (0.01, 0.05):

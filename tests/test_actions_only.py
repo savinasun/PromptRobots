@@ -3,10 +3,10 @@ from pathlib import Path
 
 import pytest
 
-from astra_yam.astra_client import OpenAIAstraClient
-from astra_yam.cli import _config_from_args, build_parser
-from astra_yam.config import AstraConfig, DIM_NAMES, PipelineConfig
-from astra_yam.embodiment import build_policy_prompt, build_tools
+from utils.astra_client import OpenAIAstraClient
+from utils.cli import _config_from_args, build_parser
+from utils.config import AstraConfig, DIM_NAMES, PipelineConfig
+from utils.embodiment import build_policy_prompt, build_tools
 
 
 def move(**targets):
@@ -24,14 +24,19 @@ def test_branch_defaults_and_explicit_language_opt_out():
 
 
 def test_action_schema_contains_no_language_fields():
+    """No prose anywhere a motion is chosen. The two calls that END the trial carry one reason each:
+    they cost nothing on the critical path and a silent give_up is undiagnosable (20260921_191247_fail)."""
     tools = build_tools(PipelineConfig().bounds, reactive=True, actions_only=True)
     assert [t["name"] for t in tools] == ["move_to", "done", "give_up", "observe"]
+    by_name = {t["name"]: t["parameters"] for t in tools}
     for tool in tools:
         assert tool["strict"] is True
-        params = tool["parameters"]
-        assert params["additionalProperties"] is False
-        if tool["name"] != "move_to":
-            assert params["properties"] == {} and params["required"] == []
+        assert tool["parameters"]["additionalProperties"] is False
+    for name in ("done", "give_up"):
+        assert list(by_name[name]["properties"]) == by_name[name]["required"] == ["reason"]
+        assert by_name[name]["properties"]["reason"]["type"] == "string"
+    assert by_name["observe"]["properties"] == {} and by_name["observe"]["required"] == []
+    assert "note" not in by_name["move_to"]["properties"]
     params = tools[0]["parameters"]
     assert list(params["properties"]) == params["required"] == ["targets"]
     targets = params["properties"]["targets"]
@@ -40,7 +45,7 @@ def test_action_schema_contains_no_language_fields():
     assert all(p == {"type": ["number", "null"]} for p in targets["properties"].values())
 
 
-def test_actual_request_forces_low_effort_and_preserves_summary_setting(monkeypatch):
+def test_actual_request_defaults_effort_low_but_never_overrides_a_configured_one(monkeypatch):
     import openai
     received = []
     class Responses:
@@ -49,17 +54,25 @@ def test_actual_request_forces_low_effort_and_preserves_summary_setting(monkeypa
             return type("Response", (), {"output": [], "usage": None, "id": "test", "model": "gpt-6-astra"})()
     monkeypatch.setenv("OPENAI_API_KEY", "test-only")
     monkeypatch.setattr(openai, "OpenAI", lambda **kwargs: type("Client", (), {"responses": Responses()})())
+    # Strict action mode needs *an* effort (Astra has no effort="none"), but it is a floor. Overriding a
+    # configured one silently discarded --effort high for every planning run (20260921_191247_fail).
     cfg = AstraConfig(actions_only=True, reasoning_effort="high", reasoning_summary="detailed",
                       tool_choice="auto", parallel_tool_calls=True)
     client = OpenAIAstraClient(cfg, build_tools(PipelineConfig().bounds, actions_only=True))
     client.create([{"role": "user", "content": "test"}])
     request = received[0]
-    assert request["reasoning"] == {"effort": "low", "summary": "detailed"}
+    assert request["reasoning"] == {"effort": "high", "summary": "detailed"}
     assert request["tool_choice"] == "required" and request["parallel_tool_calls"] is False
     assert request["include"] == ["reasoning.encrypted_content"]
     assert request["store"] is False
-    client.cfg.reasoning_summary = None
-    assert client.build_request_dict([])["reasoning"] == {"effort": "low"}
+
+    received.clear()
+    unset = AstraConfig(actions_only=True, reasoning_effort=None, reasoning_summary="detailed")
+    OpenAIAstraClient(unset, build_tools(PipelineConfig().bounds, actions_only=True)).create(
+        [{"role": "user", "content": "test"}])
+    assert received[0]["reasoning"] == {"summary": "detailed", "effort": "low"}
+    client.cfg.reasoning_summary = None       # dropping the summary leaves the configured effort alone
+    assert client.build_request_dict([])["reasoning"] == {"effort": "high"}
 
     def unsupported(**kwargs):
         received.append(kwargs)
@@ -110,7 +123,7 @@ def test_malformed_actions_stop_before_any_motion(tmp_path, call):
 
 @pytest.mark.parametrize("extra", ["message", "second_action"])
 def test_language_or_multiple_actions_cannot_authorize_first_motion(tmp_path, extra):
-    from astra_yam.astra_client import _parse_function_calls
+    from utils.astra_client import _parse_function_calls
     from test_session_sim import _make
     _, runner, _, client = _make(tmp_path, script=[move(left_z=.3)], **{"astra.actions_only": True})
     create = client.create

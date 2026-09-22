@@ -3,8 +3,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from astra_yam.astra_client import OpenAIAstraClient
-from astra_yam.config import AstraConfig
+from utils.astra_client import OpenAIAstraClient
+from utils.config import AstraConfig
 
 
 class Stream:

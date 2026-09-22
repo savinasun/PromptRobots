@@ -33,7 +33,7 @@ disables the check.
 ## Notes
 
 * **CO08 needs a hand on the e-stop.** On 2026-09-08, with `bounds.y = ±0.40` and no clearance check, the
-  right arm descended onto the left gripper and the two arms collided; `astra_yam/collision.py` was written
+  right arm descended onto the left gripper and the two arms collided; `utils/collision.py` was written
   in response. This task deliberately reproduces that approach with the check in place. Run it last, watch
   the viser view, and treat a gateway rejection here as the correct outcome, not a failure.
 * **Two parallel tools cannot work within about 5 cm.** Each gripper is a 5 cm housing on a 3 cm neck, and

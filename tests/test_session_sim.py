@@ -4,12 +4,12 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from astra_yam.astra_client import DEFAULT_SIM_SCRIPT, ScriptedAstraClient
-from astra_yam.config import PipelineConfig, load_config
-from astra_yam.embodiment import build_tools
-from astra_yam.kinematics import ArmKinematics
-from astra_yam.session import OperatorInput, TrialRunner
-from astra_yam.sim import SimCameraSource, SimWorld, SimYamRobot
+from utils.astra_client import DEFAULT_SIM_SCRIPT, ScriptedAstraClient
+from utils.config import PipelineConfig, load_config
+from utils.embodiment import build_tools
+from utils.kinematics import ArmKinematics
+from utils.session import OperatorInput, TrialRunner
+from utils.sim import SimCameraSource, SimWorld, SimYamRobot
 
 
 def _make(tmp_path, script=None, **overrides):

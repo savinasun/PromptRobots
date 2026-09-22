@@ -1,9 +1,9 @@
 import numpy as np
 import pytest
 
-from astra_yam.config import REPO_ROOT, YAM_JOINT_LOWER, YAM_JOINT_UPPER, load_config
-from astra_yam.kinematics import ArmKinematics
-from astra_yam.workspace import (
+from utils.config import REPO_ROOT, YAM_JOINT_LOWER, YAM_JOINT_UPPER, load_config
+from utils.kinematics import ArmKinematics
+from utils.workspace import (
     EULER_PITCH_LIMIT,
     EULER_ROLL_LIMIT,
     EULER_YAW_LIMIT,
@@ -82,10 +82,10 @@ def test_full_rotation_bounds_follow_the_euler_convention():
 
 
 def test_tool_floor_defaults_to_the_z_bound_and_can_be_overridden():
-    from astra_yam.config import ARMS, Bounds, PipelineConfig
-    from astra_yam.embodiment import ARM_SLICES
-    from astra_yam.gateway import SafetyGateway
-    from astra_yam.sim import SimYamRobot
+    from utils.config import ARMS, Bounds, PipelineConfig
+    from utils.embodiment import ARM_SLICES
+    from utils.gateway import SafetyGateway
+    from utils.sim import SimYamRobot
 
     cfg = PipelineConfig()
     cfg.bounds = Bounds(z=(-0.516, 0.864), pitch=(-1.5708, 1.5708), roll=(-3.1416, 3.1416))
@@ -95,7 +95,7 @@ def test_tool_floor_defaults_to_the_z_bound_and_can_be_overridden():
     q[6] = q[13] = 1.0
     robot = SimYamRobot(initial_q=q)
     gw = SafetyGateway(cfg, kin, robot, {a: kin.fk(q[ARM_SLICES[a]])[1] for a in ARMS}, realtime=False)
-    from astra_yam.kinematics import rotation_from_ypr
+    from utils.kinematics import rotation_from_ypr
 
     grasp, rot_home = kin.fk(np.asarray(cfg.robot.home_joints_left))
     rolled = rotation_from_ypr(rot_home, 0.0, 0.0, 1.5708)        # jaw axis vertical: one tip 4.75 cm below the grasp

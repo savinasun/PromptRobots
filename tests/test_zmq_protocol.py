@@ -5,9 +5,9 @@ import time
 import numpy as np
 import pytest
 
-from astra_yam.config import DEFAULT_GELLO_SOFTWARE, REFERENCE_HOME_JOINTS
-from astra_yam.robot_interface import RobotError, ZmqYamRobot, ensure_gello_on_path
-from astra_yam.sim import SimYamRobot, start_sim_zmq_thread
+from utils.config import DEFAULT_GELLO_SOFTWARE, REFERENCE_HOME_JOINTS
+from utils.robot_interface import RobotError, ZmqYamRobot, ensure_gello_on_path
+from utils.sim import SimYamRobot, start_sim_zmq_thread
 
 
 def _free_port():

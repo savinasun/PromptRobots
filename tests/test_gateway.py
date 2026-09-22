@@ -4,11 +4,11 @@ from dataclasses import replace
 import numpy as np
 import pytest
 
-from astra_yam.config import ARMS, PipelineConfig, reference_bounds
-from astra_yam.embodiment import ARM_SLICES
-from astra_yam.gateway import GatewayRejection, SafetyGateway
-from astra_yam.kinematics import ArmKinematics
-from astra_yam.sim import SimYamRobot
+from utils.config import ARMS, PipelineConfig, reference_bounds
+from utils.embodiment import ARM_SLICES
+from utils.gateway import GatewayRejection, SafetyGateway
+from utils.kinematics import ArmKinematics
+from utils.sim import SimYamRobot
 
 
 def _bounds(**overrides):
@@ -110,6 +110,45 @@ def test_gripper_only_move(setup):
     assert payload["ok"] and plan.cartesian_steps == 16     # 0.8 / (0.5 per s / 10 Hz)
     _, _, eef = gw.read_state()
     assert abs(eef["left_gripper"] - 0.2) < 1e-6 and abs(eef["right_gripper"] - 0.5) < 1e-6
+
+
+def test_a_waypoint_sequence_is_planned_as_one_continuous_path(setup):
+    cfg, kin, robot, gw = setup
+    cfg.motion.max_waypoints_per_call = 4
+    legs = [{"left_x": 0.327, "left_z": 0.14}, {"left_y": 0.08}, {"left_gripper": 0.0}]
+    plan = gw.plan(legs)
+    # Each leg holds what the previous one left alone, so the sweep keeps the lowered z.
+    assert [round(w["left_x"], 4) for w in plan.resolved_waypoints] == [0.327, 0.327, 0.327]
+    assert abs(plan.resolved_waypoints[1]["left_y"] - 0.08) < 1e-9
+    assert abs(plan.resolved_waypoints[2]["left_z"] - 0.14) < 1e-9
+    # and the whole stroke is one path, longer than any single leg.
+    assert plan.cartesian_steps > gw.plan([legs[0]]).cartesian_steps
+    assert plan.q_path.shape == (plan.steps, 14)
+
+    payload, executed, res = gw.move_to(legs, 3000)
+    assert payload["ok"] and payload["waypoints_requested"] == 3
+    q, poses, eef = gw.read_state()
+    assert abs(eef["left_x"] - 0.327) < 0.003 and abs(eef["left_y"] - 0.08) < 0.003
+    assert abs(eef["left_z"] - 0.14) < 0.003 and eef["left_gripper"] < 0.01
+
+
+def test_a_bad_leg_rejects_the_whole_stroke_before_any_motion(setup):
+    cfg, kin, robot, gw = setup
+    cfg.motion.max_waypoints_per_call = 4
+    before = robot.get_joint_positions().copy()
+    payload, plan, res = gw.move_to([{"left_x": 0.327}, {"left_z": 99.0}], 3000)
+    assert not payload["ok"] and payload["status"] == "rejected"
+    assert plan is None and res is None and gw.waypoints_executed == 0
+    assert np.allclose(robot.get_joint_positions(), before)
+
+
+def test_a_sequence_needs_the_rig_to_have_opted_in(setup):
+    cfg, kin, robot, gw = setup
+    assert cfg.motion.max_waypoints_per_call == 1
+    with pytest.raises(GatewayRejection, match="at most 1"):
+        gw.plan([{"left_x": 0.327}, {"left_y": 0.08}])
+    with pytest.raises(GatewayRejection, match="at least one"):
+        gw.plan([])
 
 
 def test_pacing_subdivides_large_joint_steps(setup):

@@ -1,0 +1,104 @@
+# Station skild-yam-8 (bimanual YAM, hw v2.3), Astra closed-loop defaults.
+# Every key mirrors a field in utils/config.py; omit anything you want at its default.
+embodiment_name: yam_arms
+
+bounds:
+  # NOT hand-tuned. Every range below is the robot's own limit, derived from skild_yam_v2.urdf and regenerated with
+  #   python -m utils workspace
+  # Positions: axis-aligned envelope of the grasp point over the full URDF joint box (200064 FK samples, max reach
+  # 0.866 m), rounded outward to the millimetre. Rotations: the full range the reported extrinsic xyz Euler angles
+  # can represent (pitch is capped at +/-pi/2 by that convention itself, yaw and roll span +/-pi).
+  # This is a bounding box, not the reachable set: the gateway still rejects each unreachable target via IK, plus
+  # joint limits, configuration flips, arm-to-arm clearance and tracking error. Nothing artificial is imposed.
+  x: [-0.777, 0.777]
+  y: [-0.771, 0.772]
+  z: [-0.516, 0.864]  # the arm can reach 0.52 m BELOW its base plane; nothing stops a command into the table now.
+                      # Set motion.tool_floor_z_m (below) to keep the jaw tips above the table while tilting.
+  yaw: [-3.1416, 3.1416]
+  pitch: [-1.5708, 1.5708]
+  roll: [-3.1416, 3.1416]
+  gripper: [0.0, 1.0]
+
+motion:
+  cadence_hz: 10.0
+  control_hz: 30.0
+  linear_speed_mps: 0.01          # reference rig speed (~1 mm per waypoint)
+  yaw_speed_rps: 0.15
+  gripper_speed_per_s: 0.5
+  max_joint_step_rad: 0.05
+  max_waypoints_per_call: 4       # one move_to may carry up to 4 Cartesian waypoints, executed as one
+                                  # continuous validated motion. Profiling 20260921_155454_fail: the arm was
+                                  # moving 4% of the wall clock, so a whole stroke per inference call is the
+                                  # cheapest way to buy motion. Set back to 1 for the reference schema.
+  tracking_abort_rad: 0.25
+  settle_seconds: 0.3
+  homing_seconds: 5.0
+  # tool_floor_z_m: 0.0           # uncomment to keep jaw tips/housing above the table while tilting; with the
+                                  # bounds above wide open, the tilt floor guard is otherwise inactive.
+
+robot:
+  backend: zmq                    # launch_yam_node.sh -> experiments/launch_nodes.py --robot=bimanual_yam
+  host: 127.0.0.1
+  port: 6001
+  gello_software_path: /home/skild/bimanual_manipulation/skild-gello/gello_software
+  home_at_start: true
+  home_joints_left:  [-0.02, 0.7967, 0.6167, -0.3756, -0.0204, -0.0078]
+  home_joints_right: [-0.02, 0.7967, 0.6167, -0.3756, -0.0204, -0.0078]
+  home_gripper: 1.0
+  # exact URDF limits (skild_yam_v2.urdf), not gello's rounded constants; both IK and the robot driver clamp here
+  joint_lower: [-2.61799, 0.0, 0.0, -1.5708, -1.5708, -2.0944]
+  joint_upper: [3.13, 3.65, 3.13, 1.5708, 1.5708, 2.0944]
+
+cameras:
+  backend: realsense
+  station_config_path: /home/skild/bimanual_manipulation/metadata/station_config.json
+  names:
+    top_camera: top_cam
+    left_wrist_camera: left_cam
+    right_wrist_camera: right_cam
+  jpeg_quality: 85
+  detail: high
+
+astra:
+  backend: openai             # controlling model: openrouter = Chat Completions via OpenRouter
+                                  # (OPENROUTER_API_KEY); openai = Responses API with gpt-6-astra (OPENAI_API_KEY)
+  model: gpt-6-astra       # GLM 5.3 Flash: the GLM 5.3 variant that accepts images (z-ai/glm-5.3 is text-only)
+  actions_only: false            # language mode for single-model runs: notes on every move_to, hindsight on
+                                 # done/give_up. With --planning this is forced true by
+                                 # planning.motion_actions_only (pass --language-output to opt out).
+  reasoning_effort: low          # OpenRouter unified reasoning effort (dropped automatically if rejected)
+  reasoning_summary: auto        # openai only; openrouter logs the model's reasoning text directly
+  tool_choice: required
+  parallel_tool_calls: false
+  image_history: 4                # images kept for the newest 4..8 observations (0 = keep every image, and
+                                  # every request then re-sends the whole run)
+  prompt_cache_key: astra-yam     # openai only: same key across trials keeps the prompt prefix cached
+  request_timeout_s: 300
+
+shadow:                           # other models asked the same question every turn; shown next to the
+  enabled: false                   # controlling model's answer in the console, transcript.txt and
+  backend: openrouter             # notes_compare.txt - never executed
+  model: qwen/qwen3.8-max-0902    # OpenRouter model ID (tools + image input required)
+  extra_models:                   # more shadows, queried in parallel: a model ID (same backend) or a mapping
+    - {backend: openai, model: gpt-6-astra}   # Astra over the OpenAI Responses API (OPENAI_API_KEY)
+  reasoning_effort: low
+  wait_timeout_s: 60              # a shadow answer later than this after Astra's is dropped
+
+planning:                         # applies when the run is started with --planning; `enabled` stays off here
+                                  # so the single-model script using this config is unaffected.
+  motion_calls_per_plan: 3        # System 1 turns per System 2 plan. The planner was 79% of the wall clock in
+                                  # 20260921_155454_fail (21 s per call, decode-bound); amortize it. A rejected
+                                  # action, a changed scene or operator feedback still recalls it immediately.
+  speculative_motion: true        # send System 1's request the moment System 2 closes its instruction fence,
+                                  # so System 1's ~4 s time-to-first-token runs under the planner's last tokens
+  motion_actions_only: true       # System 1 emits actions only; the narration is System 2's and is not repeated
+
+limits:
+  max_llm_calls: 100
+  max_waypoints: 12000
+  max_trial_seconds: 1200
+  max_consecutive_rejections: 5
+  strict_gateway: false
+
+log_dir: /home/skild/savina/PromptRobots/runs
+home_on_end: false

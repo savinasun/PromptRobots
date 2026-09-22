@@ -9,4 +9,4 @@ conda activate gello
 export PYTHONUNBUFFERED=1
 export GELLO_SOFTWARE_PATH="${GELLO_SOFTWARE_PATH:-$HOME/bimanual_manipulation/skild-gello/gello_software}"
 cd "$(dirname "$0")/.."
-exec python -m astra_yam "$@"
+exec python -m utils "$@"

@@ -58,7 +58,7 @@ came from the older hand-set `bounds.y = ±0.25`, not from the arms.)
 * **Set the table height.** `bounds.z` now spans the full FK envelope (−0.516 … 0.864 m), so nothing stops a
   command into the table. Set `motion.tool_floor_z_m` to the measured table surface height in the base frame
   before running any of these — measure it, do not guess (rest the jaws on the table and read `eef_state[2]`,
-  or use `python -m astra_yam viz`). Every height in a task is written relative to the table ("5 cm above"),
+  or use `python -m utils viz`). Every height in a task is written relative to the table ("5 cm above"),
   so no task text depends on that number.
 * **Tilt.** The pour/tilt tasks need pitch and roll actuated: pass `--release-tilt 80` (the value the chili
   pour traces used). Tasks that must not tilt say so and use `--release-tilt 0`.

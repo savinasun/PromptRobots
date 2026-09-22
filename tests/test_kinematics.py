@@ -5,8 +5,8 @@ import numpy as np
 import pytest
 from scipy.spatial.transform import Rotation
 
-from astra_yam.config import REFERENCE_HOME_JOINTS
-from astra_yam.kinematics import ArmKinematics, relative_ypr, rotation_from_ypr, unwrap_angle
+from utils.config import REFERENCE_HOME_JOINTS
+from utils.kinematics import ArmKinematics, relative_ypr, rotation_from_ypr, unwrap_angle
 
 from conftest import ROOT, reference_transcript
 EXAMPLE = reference_transcript("0002_example_input.json")

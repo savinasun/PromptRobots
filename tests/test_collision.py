@@ -1,12 +1,12 @@
 import numpy as np
 import pytest
 
-from astra_yam.collision import clearance, segment_distance
-from astra_yam.config import ARMS, Bounds, PipelineConfig, REFERENCE_HOME_JOINTS
-from astra_yam.embodiment import ARM_SLICES
-from astra_yam.gateway import SafetyGateway
-from astra_yam.kinematics import ArmKinematics
-from astra_yam.sim import SimYamRobot
+from utils.collision import clearance, segment_distance
+from utils.config import ARMS, Bounds, PipelineConfig, REFERENCE_HOME_JOINTS
+from utils.embodiment import ARM_SLICES
+from utils.gateway import SafetyGateway
+from utils.kinematics import ArmKinematics
+from utils.sim import SimYamRobot
 
 
 def test_segment_distance_basics():
@@ -80,7 +80,7 @@ def test_yawed_right_tool_can_reach_the_held_object():
     assert cr.deficit_m <= 1e-6, cr
     # parallel tools that close do collide: same fingertips with yaw 0 would overlap the housings
     q = robot.get_joint_positions().copy()
-    from astra_yam.kinematics import rotation_from_ypr
+    from utils.kinematics import rotation_from_ypr
     r = kin.ik(np.array([0.38, 0.25, 0.14]), rotation_from_ypr(gw.start_rot["right"], 0.0), q[7:13], max_iters=300)
     q[7:13] = r.q
     assert clearance(kin, q).deficit_m > 0

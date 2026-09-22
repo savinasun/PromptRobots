@@ -1,11 +1,11 @@
 import numpy as np
 import pytest
 
-from astra_yam.config import ARMS, Bounds, PipelineConfig, REFERENCE_HOME_JOINTS
-from astra_yam.embodiment import ARM_SLICES
-from astra_yam.gateway import SafetyGateway
-from astra_yam.kinematics import ArmKinematics
-from astra_yam.sim import SCENES, SimCan, SimWorld, SimYamRobot
+from utils.config import ARMS, Bounds, PipelineConfig, REFERENCE_HOME_JOINTS
+from utils.embodiment import ARM_SLICES
+from utils.gateway import SafetyGateway
+from utils.kinematics import ArmKinematics
+from utils.sim import SCENES, SimCan, SimWorld, SimYamRobot
 
 
 def _setup(tilt=1.4):

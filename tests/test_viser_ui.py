@@ -7,12 +7,12 @@ import pytest
 viser = pytest.importorskip("viser")
 yourdfpy = pytest.importorskip("yourdfpy")
 
-from astra_yam.config import ARMS, REFERENCE_HOME_JOINTS, PipelineConfig  # noqa: E402
-from astra_yam.embodiment import ARM_SLICES  # noqa: E402
-from astra_yam.gateway import SafetyGateway  # noqa: E402
-from astra_yam.kinematics import ArmKinematics  # noqa: E402
-from astra_yam.sim import SimCameraSource, SimWorld, SimYamRobot  # noqa: E402
-from astra_yam.viser_ui import LinkMeshes, MirroredRobot, ViserCameraSource, ViserVisualizer, look_at_wxyz, wxyz_from_matrix  # noqa: E402
+from utils.config import ARMS, REFERENCE_HOME_JOINTS, PipelineConfig  # noqa: E402
+from utils.embodiment import ARM_SLICES  # noqa: E402
+from utils.gateway import SafetyGateway  # noqa: E402
+from utils.kinematics import ArmKinematics  # noqa: E402
+from utils.sim import SimCameraSource, SimWorld, SimYamRobot  # noqa: E402
+from utils.viser_ui import LinkMeshes, MirroredRobot, ViserCameraSource, ViserVisualizer, look_at_wxyz, wxyz_from_matrix  # noqa: E402
 from scipy.spatial.transform import Rotation  # noqa: E402
 
 
@@ -301,7 +301,7 @@ def test_render_fails_over_without_mixing_partial_frames(viz_env, monkeypatch):
 
 
 def test_live_notes_arrive_before_motion_and_history_survives(viz_env):
-    from astra_yam.astra_client import AstraResponse, FunctionCall
+    from utils.astra_client import AstraResponse, FunctionCall
     cfg, kin, world, robot, viz = viz_env
     viz.on_trial_start("Open the case", _home())
     viz.on_astra_call(1, 100, 3, 3)

@@ -13,8 +13,8 @@ or simulator scene. No task strategy is loaded unless explicitly requested.
 
 Each request contains:
 
-1. **System message:** `configs/SYSTEM_PROMPT.md`, with the configured embodiment
-   name and call budget; `configs/TILT_NOTE.md` when pitch/roll are actuated.
+1. **System message:** `docs/SYSTEM_PROMPT.md`, with the configured embodiment
+   name and call budget; `docs/TILT_NOTE.md` when pitch/roll are actuated.
 2. **Optional advice:** the file explicitly selected by `--policy-notes`, if any.
    Advice and previous conversations are never automatically imported.
 3. **Reactive instructions:** with `--dynamic-scene`, `session.reactive_rules`

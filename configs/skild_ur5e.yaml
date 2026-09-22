@@ -1,0 +1,122 @@
+# Bimanual UR5e + Robotiq 2F-85 on the skild stand (configs/skild_ur5e.urdf), Astra closed-loop defaults.
+# Every key mirrors a field in utils/config.py; omit anything you want at its default. Anything kinematic that is
+# left out (MJCF, joint limits, home pose, URDF, prompt files, bounds) comes from the `ur5e_arms` entry in
+# utils/arm_models.py, so this file only needs to say what differs from that.
+#
+# Switch rigs per run with `--config configs/skild_ur5e.yaml` (this file) or `--embodiment ur5e_arms`; the YAM
+# station is configs/skild_yam_8.yaml. The two rigs share every model-facing convention: 14-DoF wire layout,
+# per-arm gravity-aligned base frames (+x forward, +y left, +z up), grippers 0 = closed .. 1 = open.
+embodiment_name: ur5e_arms
+
+bounds:
+  # NOT hand-tuned. Every range below is the robot's own limit, derived from skild_ur5e.urdf and regenerated with
+  #   python -m utils workspace --embodiment ur5e_arms --arm left   (and --arm right; the mounts are mirrored)
+  # Positions: axis-aligned envelope of the grasp point over the full URDF joint box (200000 FK samples per arm,
+  # max reach 1.268 m), union of both arms, rounded outward to the millimetre, in each arm's gravity-aligned frame
+  # (origin at that arm's base mount, 0.113 m above the table). Rotations: the full range the reported extrinsic
+  # xyz Euler angles can represent. This is a bounding box, not the reachable set: the gateway still rejects each
+  # unreachable target via IK, plus joint limits, configuration flips, arm-to-arm clearance and tracking error.
+  x: [-1.095, 1.083]
+  y: [-1.21, 1.213]
+  z: [-0.989, 1.213]  # the arm reaches almost 1 m BELOW its base mount; motion.tool_floor_z_m (below) is what keeps
+                      # the jaws above the table.
+  yaw: [-3.1416, 3.1416]
+  pitch: [-1.5708, 1.5708]
+  roll: [-3.1416, 3.1416]
+  gripper: [0.0, 1.0]
+
+motion:
+  cadence_hz: 10.0
+  control_hz: 30.0
+  linear_speed_mps: 0.01          # reference rig speed (~1 mm per waypoint); --fast raises it to 5 cm/s
+  yaw_speed_rps: 0.15
+  gripper_speed_per_s: 0.5
+  max_joint_step_rad: 0.03        # the UR5e is heavier and faster than the YAM: pace joint motion a little finer
+  max_waypoints_per_call: 4       # one move_to may carry up to 4 Cartesian waypoints (see skild_yam_8.yaml)
+  tracking_abort_rad: 0.25
+  settle_seconds: 0.3
+  homing_seconds: 6.0
+  # Table surface: the stand model puts the URDF root origin on the table and the base mounts 0.113 m above it
+  # (skild_ur5e.urdf *_base_joint z = 0.113), so the table is at z = -0.113 in each arm's frame. The tilt guard
+  # rejects any motion that would dip the jaw tips or the gripper housing below this. RE-MEASURE on the real rig
+  # and adjust before running hardware.
+  tool_floor_z_m: -0.113
+
+robot:
+  backend: zmq                    # gello: cd $GELLO_SOFTWARE_PATH && python experiments/launch_nodes.py --robot=bimanual_ur
+                                  # (URRobot at 172.17.0.2 = left / 172.17.0.3 = right in that script; check that the arm
+                                  # gello calls "left" is the one mounted at +y of the stand, i.e. left_base in the URDF)
+  host: 127.0.0.1
+  port: 6001
+  gello_software_path: /home/skild/bimanual_manipulation/skild-gello/gello_software
+  home_at_start: true
+  # Home (utils/arm_models.py UR5E_HOME_*): grasp point 0.35 m ahead of the base line, 0.05 m inboard of each base,
+  # 0.20 m above the table, fingers straight down, jaws opening along y; elbow up and outboard; mirrored.
+  home_joints_left:  [0.5897, -1.3318, 2.2059, -1.7514, -1.1666, -1.1288]
+  home_joints_right: [-0.5897, -1.8098, -2.2059, -1.3901, 1.1666, 1.1288]
+  home_gripper: 1.0
+  max_homing_joint_delta_rad: 2.5 # refuse homing from a pose that needs a wider joint sweep than this
+  # exact URDF limits (skild_ur5e.urdf); both IK and gello's URRobot clamp (+/-2pi) accept them
+  joint_lower: [-6.28319, -6.28319, -3.1415, -6.28319, -6.28319, -6.28319]
+  joint_upper: [6.28319, 6.28319, 3.1415, 6.28319, 6.28319, 6.28319]
+
+cameras:
+  backend: realsense
+  station_config_path: /home/skild/bimanual_manipulation/metadata/station_config.json   # point at the UR5e station's file
+  names:
+    top_camera: top_cam
+    left_wrist_camera: left_cam
+    right_wrist_camera: right_cam
+  jpeg_quality: 85
+  detail: high
+
+sim:
+  scene: blocks
+  table_z: -0.113                 # table surface in the left arm's frame (see motion.tool_floor_z_m)
+
+astra:
+  backend: openai                 # controlling model: openai = Responses API with gpt-6-astra (OPENAI_API_KEY);
+                                  # openrouter = Chat Completions via OpenRouter (OPENROUTER_API_KEY)
+  model: gpt-6-astra
+  actions_only: false
+  reasoning_effort: low
+  reasoning_summary: auto
+  tool_choice: required
+  parallel_tool_calls: false
+  image_history: 4
+  prompt_cache_key: astra-ur5e    # openai only: a different system prompt than the YAM's, so a different cache key
+  request_timeout_s: 300
+
+planning:                         # System 2 text -> astra (System 1 motion) -> IK -> robot
+  enabled: false                  # --planning or --planner-model MODEL enables this
+  planner:
+    backend: openrouter
+    model: qwen/qwen3.8-max-0902
+    actions_only: false
+    tool_choice: none
+    reasoning_effort: high
+    reasoning_summary: auto
+    image_history: 4
+  motion_images: false
+  motion_calls_per_plan: 3
+  speculative_motion: true
+  motion_actions_only: true
+
+shadow:
+  enabled: false
+  backend: openrouter
+  model: qwen/qwen3.8-max-0902
+  reasoning_effort: low
+  wait_timeout_s: 60
+
+limits:
+  max_llm_calls: 100
+  max_waypoints: 12000
+  max_trial_seconds: 1200
+  max_consecutive_rejections: 5
+  strict_gateway: false
+
+# Model-facing prose for this rig (docs/SYSTEM_PROMPT_UR5E.md, docs/TILT_NOTE_UR5E.md) is the embodiment default;
+# override system_prompt_path / tilt_note_path here to experiment.
+log_dir: /home/skild/savina/PromptRobots/runs
+home_on_end: false
