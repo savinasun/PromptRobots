@@ -550,7 +550,7 @@ Finally become FAST.
 """.strip()
 
     command = [
-        str(repo_root / "scripts" / "run_astra_yam.sh"),
+        str(repo_root / "scripts" / "run_astra.sh"),
         "run",
         "--config",
         str(repo_root / "configs" / "skild_yam_8_loop.yaml"),

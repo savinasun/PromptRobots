@@ -41,11 +41,11 @@ The shared reactive guidance includes:
 ## Inspect the actual prompt
 
 ```bash
-scripts/run_astra_yam.sh show-prompt --config configs/skild_yam_8.yaml \
+scripts/run_astra.sh show-prompt --config configs/skild_yam_8.yaml \
   --dynamic-scene --max-calls 60
 
 # Machine-readable system message and tools; no connection or API key needed
-scripts/run_astra_yam.sh show-prompt --config configs/skild_yam_8.yaml \
+scripts/run_astra.sh show-prompt --config configs/skild_yam_8.yaml \
   --dynamic-scene --max-calls 60 --bundle-json
 ```
 
@@ -61,10 +61,10 @@ with the assembled prompt used for that trial.
 ## Change tasks without changing the shared policy
 
 ```bash
-scripts/run_astra_yam.sh run --sim --scene airpod_bowl --dynamic-scene --viser \
+scripts/run_astra.sh run --sim --scene airpod_bowl --dynamic-scene --viser \
   --max-calls 60 --goal "Pick up the charging case and place it inside the green bowl."
 
-scripts/run_astra_yam.sh run --sim --scene blocks --dynamic-scene --viser \
+scripts/run_astra.sh run --sim --scene blocks --dynamic-scene --viser \
   --max-calls 60 --goal "Pick up the blue block and stack it on the green block."
 ```
 

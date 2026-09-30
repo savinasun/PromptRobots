@@ -55,13 +55,26 @@ robot:
   home_joints_left:  [0.5897, -1.3318, 2.2059, -1.7514, -1.1666, -1.1288]
   home_joints_right: [-0.5897, -1.8098, -2.2059, -1.3901, 1.1666, 1.1288]
   home_gripper: 1.0
-  max_homing_joint_delta_rad: 2.5 # refuse homing from a pose that needs a wider joint sweep than this
+  # Refuse homing from a pose that needs a wider joint sweep than this. 2.5 was too tight for this rig:
+  # reaching home from a normal mid-trial pose asks wrist_2 for ~2.5-2.6 rad on BOTH arms (the home pose is
+  # mirrored, so the two wrists sit symmetrically about it), which straddled the threshold - the right arm
+  # passed at 2.486 rad and the left tripped at 2.572. Raised to the utils/config.py default of pi, i.e. a
+  # half-turn on any single joint. That still refuses a genuinely wild sweep, and the joint it now admits is
+  # wrist_2, which reorients the tool rather than swinging the arm through the workspace. Checked on the pose
+  # that tripped it: the interpolated path rises away from the table (lowest grasp z -0.083 m, 0.030 m above
+  # motion.tool_floor_z_m) and the arms stay 0.28 m clear of each other the whole way. go_home still previews
+  # the lowest grasp-point z, and without --yes it still asks before moving.
+  max_homing_joint_delta_rad: 3.14
   # exact URDF limits (skild_ur5e.urdf); both IK and gello's URRobot clamp (+/-2pi) accept them
   joint_lower: [-6.28319, -6.28319, -3.1415, -6.28319, -6.28319, -6.28319]
   joint_upper: [6.28319, 6.28319, 3.1415, 6.28319, 6.28319, 6.28319]
 
 cameras:
-  backend: realsense
+  # This station (skild-ur5-5) runs three ZED X One cameras streamed from its Orin at 172.17.0.10,
+  # not RealSense on the local USB bus, so open them the way run_env.py and eval_bimanual.py do:
+  # gello's initialize_cameras dispatches on each entry's cam_type. The Orin's ZED streaming container
+  # must be running first, or the ZED SDK's set_from_stream() never delivers a frame.
+  backend: station
   station_config_path: /home/skild/bimanual_manipulation/metadata/station_config.json   # point at the UR5e station's file
   names:
     top_camera: top_cam

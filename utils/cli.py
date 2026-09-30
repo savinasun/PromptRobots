@@ -68,7 +68,7 @@ def build_parser() -> argparse.ArgumentParser:
         sp.add_argument("--dynamic-scene", action="store_true", help="recheck the scene before actions and observe between short moves")
         sp.add_argument("--set", action="append", metavar="KEY=VALUE", help="dotted override, e.g. motion.linear_speed_mps=0.02")
         sp.add_argument("--robot", choices=["zmq", "sim"], help="robot backend")
-        sp.add_argument("--cameras", choices=["realsense", "sim", "none"], help="camera backend")
+        sp.add_argument("--cameras", choices=["station", "realsense", "sim", "none"], help="camera backend")
         sp.add_argument("--host"), sp.add_argument("--port", type=int)
         sp.add_argument("--sim", action="store_true", help="shortcut for --robot sim --cameras sim")
         sp.add_argument("--log-dir", help="where trial folders (and check frames) are written")

@@ -159,7 +159,10 @@ class RobotConfig:
 
 @dataclass
 class CameraConfig:
-    backend: str = "realsense"          # "realsense" | "sim" | "none"
+    backend: str = "realsense"          # "station" | "realsense" | "sim" | "none"
+                                        # "station": open whatever camera_ids declares (RealSense and/or
+                                        # ZED) through gello's initialize_cameras; "realsense": open local
+                                        # RealSense devices by serial directly
     station_config_path: str = DEFAULT_STATION_CONFIG
     # station camera name -> name shown to the model (reference trials use top_cam/left_cam/right_cam)
     names: Dict[str, str] = field(

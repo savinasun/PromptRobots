@@ -38,13 +38,13 @@ Pick the rig with the station YAML or the `--embodiment` flag (any subcommand):
 
 ```bash
 # UR5e, real robot (gello: python experiments/launch_nodes.py --robot=bimanual_ur, port 6001)
-scripts/run_astra_yam.sh run --config configs/skild_ur5e.yaml --goal "Pick up the blue block."
+scripts/run_astra.sh run --config configs/skild_ur5e.yaml --goal "Pick up the blue block."
 # UR5e in simulation, no YAML needed
-scripts/run_astra_yam.sh run --embodiment ur5e_arms --sim --viser --goal "Pick up the blue block."
+scripts/run_astra.sh run --embodiment ur5e_arms --sim --viser --goal "Pick up the blue block."
 # back to the YAM for the next run
-scripts/run_astra_yam.sh run --config configs/skild_yam_8.yaml --goal "Pick up the blue block."
-scripts/run_astra_yam.sh workspace --embodiment ur5e_arms --arm right     # UR5e reach envelope / joint limits
-scripts/run_astra_yam.sh show-prompt --embodiment ur5e_arms                # UR5e system prompt + tools
+scripts/run_astra.sh run --config configs/skild_yam_8.yaml --goal "Pick up the blue block."
+scripts/run_astra.sh workspace --embodiment ur5e_arms --arm right     # UR5e reach envelope / joint limits
+scripts/run_astra.sh show-prompt --embodiment ur5e_arms                # UR5e system prompt + tools
 ```
 
 What the model sees is the same on both rigs: 14-DoF joint state, one gravity-aligned base frame per arm
@@ -79,8 +79,8 @@ contents and `show-prompt --bundle-json` for the assembled prompt and tools.
 Use the `gello` conda env via:
 
 ```bash
-scripts/run_astra_yam.sh --help
-scripts/run_astra_yam.sh run --help
+scripts/run_astra.sh --help
+scripts/run_astra.sh run --help
 ```
 
 Model backends (`astra.backend` in the YAML, or `--model` for the model ID):
@@ -122,16 +122,16 @@ chmod 600 .secrets/OPENROUTER_API_KEY
 
 ```bash
 # connectivity check (robot/cameras/key)
-scripts/run_astra_yam.sh check --save-frames
+scripts/run_astra.sh check --save-frames
 
 # simulation with real Astra model
-scripts/run_astra_yam.sh run --sim --goal "Pick up blue and place on top of green block."
+scripts/run_astra.sh run --sim --goal "Pick up blue and place on top of green block."
 
 # real robot run
-scripts/run_astra_yam.sh run --config configs/skild_yam_8.yaml --goal "Pick up blue and place on top of green block."
+scripts/run_astra.sh run --config configs/skild_yam_8.yaml --goal "Pick up blue and place on top of green block."
 
 # run multiple goals
-scripts/run_astra_yam.sh run --config configs/skild_yam_8.yaml --goals-file tasks/spatial/goals_spatial.txt
+scripts/run_astra.sh run --config configs/skild_yam_8.yaml --goals-file tasks/spatial/goals_spatial.txt
 ```
 
 ## Advanced Usage Guide
@@ -185,8 +185,8 @@ scripts/run_astra_yam.sh run --config configs/skild_yam_8.yaml --goals-file task
 ## Notes on latest structure
 
 - Legacy reference transcript files such as `configs/0000_example_input.json` and `configs/0002_example_input.json` are no longer part of this repository.
-- Use `scripts/run_astra_yam.sh show-prompt` to inspect current prompt/tool schemas.
-- Use `scripts/run_astra_yam.sh workspace [--embodiment ur5e_arms] [--arm right]` to derive workspace bounds from the rig's URDF.
+- Use `scripts/run_astra.sh show-prompt` to inspect current prompt/tool schemas.
+- Use `scripts/run_astra.sh workspace [--embodiment ur5e_arms] [--arm right]` to derive workspace bounds from the rig's URDF.
 
 ## Safety
 

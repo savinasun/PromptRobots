@@ -12,7 +12,7 @@
 Each folder holds a runnable goals file plus a `README.md` with the per-task scene setup and pass criteria.
 
 ```bash
-scripts/run_astra_yam.sh run --config configs/skild_yam_8.yaml \
+scripts/run_astra.sh run --config configs/skild_yam_8.yaml \
   --goals-file tasks/spatial/goals_spatial.txt --fast
 ```
 

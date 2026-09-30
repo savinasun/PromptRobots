@@ -1,6 +1,6 @@
 # Dexterous manipulation — 10 goals. One goal per line; lines starting with # are ignored.
 # Setup, pass criteria and what each task probes: tasks/dexterous/README.md
-# Run:  scripts/run_astra_yam.sh run --config configs/skild_yam_8.yaml \
+# Run:  scripts/run_astra.sh run --config configs/skild_yam_8.yaml \
 #         --goals-file tasks/dexterous/goals_dexterous.txt --fast --release-tilt 80 --max-seconds 1800
 # REQUIRED: motion.tool_floor_z_m must be set to the measured table height — --release-tilt only lets the
 # gateway reject a tilt that would dip the jaw tips or the housing below that floor if the floor is set.

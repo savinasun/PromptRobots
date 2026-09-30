@@ -5,7 +5,7 @@ Keeping the **whole arm** clear — not just the grasp point. Three obstacle cla
 CO10). Positions are in the **left arm's frame**; `y_right = y_left + 0.61`.
 
 ```bash
-scripts/run_astra_yam.sh run --config configs/skild_yam_8.yaml \
+scripts/run_astra.sh run --config configs/skild_yam_8.yaml \
   --goals-file tasks/collision/goals_collision.txt --fast
 ```
 

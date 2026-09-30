@@ -1,6 +1,6 @@
 # Collision avoidance — 10 goals. One goal per line; lines starting with # are ignored.
 # Setup, pass criteria and what each task probes: tasks/collision/README.md
-# Run:  scripts/run_astra_yam.sh run --config configs/skild_yam_8.yaml \
+# Run:  scripts/run_astra.sh run --config configs/skild_yam_8.yaml \
 #         --goals-file tasks/collision/goals_collision.txt --fast
 # REQUIRED: motion.tool_floor_z_m must be set to the measured table height before running these.
 # CO03, CO04, CO08 and CO10 use both arms in the shared band (y_left in [-0.40, -0.21]); the gateway's

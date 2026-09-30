@@ -5,10 +5,10 @@ This branch defaults to `astra.actions_only: true`, including the station config
 
 ```bash
 # Inspect the action-only system prompt and strict schemas without connecting
-scripts/run_astra_yam.sh show-prompt --dynamic-scene --bundle-json
+scripts/run_astra.sh show-prompt --dynamic-scene --bundle-json
 
 # Run the generic policy in simulation
-scripts/run_astra_yam.sh run --sim --scene airpod_bowl --dynamic-scene \
+scripts/run_astra.sh run --sim --scene airpod_bowl --dynamic-scene \
   --goal "Pick up the charging case and place it inside the green bowl."
 ```
 

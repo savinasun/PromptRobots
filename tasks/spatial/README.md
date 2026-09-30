@@ -7,7 +7,7 @@ so a failure is a reasoning failure rather than a grasping failure. Positions ar
 Run with tilt pinned — where the gripper goes is the whole question:
 
 ```bash
-scripts/run_astra_yam.sh run --config configs/skild_yam_8.yaml \
+scripts/run_astra.sh run --config configs/skild_yam_8.yaml \
   --goals-file tasks/spatial/goals_spatial.txt --fast --release-tilt 0
 ```
 

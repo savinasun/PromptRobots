@@ -35,7 +35,7 @@ That launcher uses the real station and its existing `--yes` setting. For simula
 inference, use:
 
 ```bash
-scripts/run_astra_yam.sh run --config configs/skild_yam_8.yaml \
+scripts/run_astra.sh run --config configs/skild_yam_8.yaml \
   --planning --planner-model qwen/qwen3.8-max-0902 --planner-effort high \
   --sim --goal "Stack the blue block on the green block."
 ```

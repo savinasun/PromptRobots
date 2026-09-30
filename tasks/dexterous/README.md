@@ -6,7 +6,7 @@ bottom of the range, and log partial progress carefully. Positions are in the **
 `y_right = y_left + 0.61`.
 
 ```bash
-scripts/run_astra_yam.sh run --config configs/skild_yam_8.yaml \
+scripts/run_astra.sh run --config configs/skild_yam_8.yaml \
   --goals-file tasks/dexterous/goals_dexterous.txt --fast --release-tilt 80 --max-seconds 1800
 ```
 
